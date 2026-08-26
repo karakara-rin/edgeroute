@@ -1,0 +1,46 @@
+{
+  "name": "@edgeroute/ai",
+  "version": "0.1.0",
+  "description": "Vercel AI SDK LanguageModelV1 provider adapter for EdgeRoute",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/provider": "^1.0.0",
+    "@edgeroute/core": "*",
+    "zod": "^3.23.8"
+  },
+  "peerDependencies": {
+    "@ai-sdk/provider": "^1.0.0",
+    "ai": "^3.0.0 || ^4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "ai": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "ai": "^4.1.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.6.3"
+  }
+}
