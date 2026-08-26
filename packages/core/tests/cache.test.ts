@@ -209,4 +209,75 @@ describe('SemanticCacheManager', () => {
     const lookup = await manager.find('Test prompt');
     expect(lookup.hit).toBe(false);
   });
+
+  it('should deduplicate concurrent in-flight save requests for the same prompt', async () => {
+    let embedCallCount = 0;
+    const trackingEmbeddingProvider = {
+      embed: vi.fn(async (text: string) => {
+        embedCallCount++;
+        // Simulate async embedding latency
+        await new Promise((r) => setTimeout(r, 20));
+        return new Array(64).fill(0.1);
+      }),
+      embedBatch: vi.fn(async (texts: string[]) => {
+        return texts.map(() => new Array(64).fill(0.1));
+      }),
+    };
+
+    const manager = new SemanticCacheManager(
+      { enabled: true, ttl: 3600 },
+      trackingEmbeddingProvider as any,
+    );
+
+    const testPrompt = 'Concurrent prompt for deduplication testing';
+
+    // Launch 5 concurrent save operations for the identical prompt
+    const promises = [
+      manager.save({ prompt: testPrompt, response: { content: '1' }, model: 'gpt-4o' }),
+      manager.save({ prompt: testPrompt, response: { content: '2' }, model: 'gpt-4o' }),
+      manager.save({ prompt: testPrompt, response: { content: '3' }, model: 'gpt-4o' }),
+      manager.save({ prompt: testPrompt, response: { content: '4' }, model: 'gpt-4o' }),
+      manager.save({ prompt: testPrompt, response: { content: '5' }, model: 'gpt-4o' }),
+    ];
+
+    const results = await Promise.all(promises);
+
+    // All concurrent calls should resolve to the shared CacheEntry
+    expect(results[0]).not.toBeNull();
+    expect(results[0]?.id).toBe(results[1]?.id);
+    expect(results[0]?.id).toBe(results[4]?.id);
+
+    // Embedding provider must be called only once thanks to promise coalescing
+    expect(embedCallCount).toBe(1);
+
+    // Ensure cache store contains exactly 1 entry for this prompt
+    const store = manager.getStore();
+    expect(await store.size()).toBe(1);
+  });
+
+  it('should maintain deterministic ID across repeated save calls', async () => {
+    const manager = new SemanticCacheManager(
+      { enabled: true, ttl: 3600 },
+      embeddingProvider,
+    );
+
+    const testPrompt = 'Deterministic ID prompt';
+    const entry1 = await manager.save({
+      prompt: testPrompt,
+      response: { content: 'First version' },
+      model: 'gpt-4o',
+    });
+
+    const entry2 = await manager.save({
+      prompt: testPrompt,
+      response: { content: 'Second updated version' },
+      model: 'gpt-4o',
+    });
+
+    expect(entry1?.id).toBe(entry2?.id);
+    // Should overwrite/update without duplicate accumulation
+    const store = manager.getStore();
+    expect(await store.size()).toBe(1);
+  });
 });
+

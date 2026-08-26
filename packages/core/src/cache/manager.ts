@@ -42,6 +42,7 @@ export class SemanticCacheManager {
   private readonly embeddingProvider: EmbeddingProvider;
   private readonly store: CacheStore;
   private readonly customPricing?: Record<string, ModelPricing>;
+  private readonly pendingWrites = new Map<string, Promise<CacheEntry | null>>();
 
   constructor(
     config: CacheConfig | CacheConfigInput,
@@ -116,37 +117,55 @@ export class SemanticCacheManager {
   }
 
   /**
-   * Asynchronously saves a new completion response to the semantic cache.
+   * Asynchronously saves a new completion response to the semantic cache with in-flight deduplication.
    */
   public async save(params: SaveCacheParams): Promise<CacheEntry | null> {
-    if (!this.isEnabled() || !params.prompt.trim()) {
+    const trimmedPrompt = params.prompt.trim();
+    if (!this.isEnabled() || !trimmedPrompt) {
       return null;
     }
 
-    const vector =
-      params.vector && params.vector.length > 0
-        ? params.vector
-        : await this.embeddingProvider.embed(params.prompt);
+    // Deterministic ID preventing duplicate key accumulation
+    const id = `${params.model}:${fastHash(trimmedPrompt)}`;
 
-    const ttl = params.ttl ?? this.config.ttl ?? 3600;
-    const id = `${params.model}:${fastHash(params.prompt)}:${Date.now()}`;
+    // In-flight deduplication: return active save promise if already pending for this entry
+    const existing = this.pendingWrites.get(id);
+    if (existing) {
+      return existing;
+    }
 
-    const entry: CacheEntry = {
-      id,
-      prompt: params.prompt,
-      vector,
-      response: params.response,
-      createdAt: Date.now(),
-      ttl,
-      metadata: {
-        model: params.model,
-        usage: params.usage,
-        ...params.metadata,
-      },
-    };
+    const savePromise = (async () => {
+      try {
+        const vector =
+          params.vector && params.vector.length > 0
+            ? params.vector
+            : await this.embeddingProvider.embed(trimmedPrompt);
 
-    await this.store.set(entry);
-    return entry;
+        const ttl = params.ttl ?? this.config.ttl ?? 3600;
+
+        const entry: CacheEntry = {
+          id,
+          prompt: params.prompt,
+          vector,
+          response: params.response,
+          createdAt: Date.now(),
+          ttl,
+          metadata: {
+            model: params.model,
+            usage: params.usage,
+            ...params.metadata,
+          },
+        };
+
+        await this.store.set(entry);
+        return entry;
+      } finally {
+        this.pendingWrites.delete(id);
+      }
+    })();
+
+    this.pendingWrites.set(id, savePromise);
+    return savePromise;
   }
 
   /**

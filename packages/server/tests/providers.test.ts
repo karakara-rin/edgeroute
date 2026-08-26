@@ -188,6 +188,49 @@ describe('Anthropic Adapter Transformation', () => {
     expect(text).toContain('"content":" response"');
     expect(text).toContain('data: [DONE]');
   });
+
+  it('transforms Anthropic mid-stream SSE error event into OpenAI compatible error chunk', async () => {
+    const adapter = new AnthropicAdapter();
+
+    const sseEvents = [
+      'event: message_start\ndata: {"type":"message_start","message":{"id":"msg_stream_err","model":"claude-haiku-4-5"}}\n\n',
+      'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Starting well..."}}\n\n',
+      'event: error\ndata: {"type":"error","error":{"type":"overloaded_error","message":"Anthropic servers are overloaded"}}\n\n',
+    ];
+
+    const stream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        for (const evt of sseEvents) {
+          controller.enqueue(encoder.encode(evt));
+        }
+        controller.close();
+      },
+    });
+
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response(stream, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      }),
+    );
+
+    const response = await adapter.execute({
+      model: 'claude-haiku-4-5',
+      body: {
+        messages: [{ role: 'user', content: 'Hi' }],
+        stream: true,
+      },
+      clientHeaders: new Headers(),
+      config: dummyConfig,
+    });
+
+    const text = await response.text();
+    expect(text).toContain('"content":"Starting well..."');
+    expect(text).toContain('"error"');
+    expect(text).toContain('Anthropic servers are overloaded');
+    expect(text).toContain('"type":"overloaded_error"');
+  });
 });
 
 describe('Multi-Provider Proxy Dispatch and Cross-Provider Fallback', () => {

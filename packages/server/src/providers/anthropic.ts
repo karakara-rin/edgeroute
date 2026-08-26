@@ -469,212 +469,96 @@ export class AnthropicAdapter implements ProviderAdapter {
     const blockIndexToToolIndex = new Map<number, number>();
     const syntheticBlockIndices = new Set<number>();
     let nextToolIndex = 0;
+    let currentEventType = '';
 
-    const transformStream = new TransformStream<Uint8Array, Uint8Array>({
-      transform: (chunk, controller) => {
-        buffer += decoder.decode(chunk, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+    const processLine = (line: string, controller: TransformStreamDefaultController<Uint8Array>) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        currentEventType = '';
+        return;
+      }
 
-        let currentEventType = '';
+      if (trimmed.startsWith('event:')) {
+        currentEventType = trimmed.slice(6).trim();
+        return;
+      }
 
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) {
-            currentEventType = '';
-            continue;
+      if (trimmed.startsWith('data:')) {
+        const jsonStr = line.startsWith('data: ')
+          ? line.slice(6).trim()
+          : line.startsWith('data:')
+            ? line.slice(5).trim()
+            : '';
+        if (!jsonStr || jsonStr === '[DONE]') return;
+
+        try {
+          const parsed = JSON.parse(jsonStr);
+
+          // 0. Error event handling (mid-stream errors from Anthropic)
+          if (
+            currentEventType === 'error' ||
+            parsed.type === 'error' ||
+            Boolean(parsed.error)
+          ) {
+            const errorObj = {
+              error: {
+                message:
+                  parsed.error?.message ||
+                  parsed.message ||
+                  'Anthropic upstream stream error',
+                type: parsed.error?.type || parsed.type || 'upstream_error',
+                param: null,
+                code: parsed.error?.code || null,
+              },
+            };
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(errorObj)}\n\n`),
+            );
+            return;
           }
 
-          if (trimmed.startsWith('event:')) {
-            currentEventType = trimmed.replace(/^event:\s*/, '');
-            continue;
+          // 1. Message start event
+          if (
+            currentEventType === 'message_start' ||
+            parsed.type === 'message_start'
+          ) {
+            if (parsed.message?.id) {
+              messageId = parsed.message.id;
+            }
+            const firstChunk = {
+              id: messageId,
+              object: 'chat.completion.chunk',
+              created: createdAt,
+              model,
+              choices: [
+                {
+                  index: 0,
+                  delta: { role: 'assistant', content: '' },
+                  finish_reason: null,
+                },
+              ],
+            };
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(firstChunk)}\n\n`),
+            );
           }
+          // 2. Content block start event
+          else if (
+            currentEventType === 'content_block_start' ||
+            parsed.type === 'content_block_start'
+          ) {
+            const blockIdx = parsed.index as number;
+            const contentBlock = parsed.content_block;
 
-          if (trimmed.startsWith('data:')) {
-            const jsonStr = trimmed.replace(/^data:\s*/, '');
-            try {
-              const parsed = JSON.parse(jsonStr);
-
-              // 1. Message start event
+            if (contentBlock?.type === 'tool_use') {
               if (
-                currentEventType === 'message_start' ||
-                parsed.type === 'message_start'
+                syntheticStructuredOutputToolName &&
+                contentBlock.name === syntheticStructuredOutputToolName
               ) {
-                if (parsed.message?.id) {
-                  messageId = parsed.message.id;
-                }
-                const firstChunk = {
-                  id: messageId,
-                  object: 'chat.completion.chunk',
-                  created: createdAt,
-                  model,
-                  choices: [
-                    {
-                      index: 0,
-                      delta: { role: 'assistant', content: '' },
-                      finish_reason: null,
-                    },
-                  ],
-                };
-                controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify(firstChunk)}\n\n`),
-                );
-              }
-              // 2. Content block start event
-              else if (
-                currentEventType === 'content_block_start' ||
-                parsed.type === 'content_block_start'
-              ) {
-                const blockIdx = parsed.index as number;
-                const contentBlock = parsed.content_block;
-
-                if (contentBlock?.type === 'tool_use') {
-                  if (
-                    syntheticStructuredOutputToolName &&
-                    contentBlock.name === syntheticStructuredOutputToolName
-                  ) {
-                    syntheticBlockIndices.add(blockIdx);
-                  } else {
-                    const toolIdx = nextToolIndex++;
-                    blockIndexToToolIndex.set(blockIdx, toolIdx);
-
-                    const chunkObj = {
-                      id: messageId,
-                      object: 'chat.completion.chunk',
-                      created: createdAt,
-                      model,
-                      choices: [
-                        {
-                          index: 0,
-                          delta: {
-                            tool_calls: [
-                              {
-                                index: toolIdx,
-                                id: contentBlock.id || `call_${Date.now()}`,
-                                type: 'function',
-                                function: {
-                                  name: contentBlock.name || '',
-                                  arguments: '',
-                                },
-                              },
-                            ],
-                          },
-                          finish_reason: null,
-                        },
-                      ],
-                    };
-                    controller.enqueue(
-                      encoder.encode(`data: ${JSON.stringify(chunkObj)}\n\n`),
-                    );
-                  }
-                } else if (contentBlock?.type === 'text' && contentBlock.text) {
-                  const chunkObj = {
-                    id: messageId,
-                    object: 'chat.completion.chunk',
-                    created: createdAt,
-                    model,
-                    choices: [
-                      {
-                        index: 0,
-                        delta: { content: contentBlock.text },
-                        finish_reason: null,
-                      },
-                    ],
-                  };
-                  controller.enqueue(
-                    encoder.encode(`data: ${JSON.stringify(chunkObj)}\n\n`),
-                  );
-                }
-              }
-              // 3. Content block delta event
-              else if (
-                currentEventType === 'content_block_delta' ||
-                parsed.type === 'content_block_delta'
-              ) {
-                const blockIdx = parsed.index as number;
-                const delta = parsed.delta;
-
-                if (delta?.type === 'text_delta' && delta.text) {
-                  const chunkObj = {
-                    id: messageId,
-                    object: 'chat.completion.chunk',
-                    created: createdAt,
-                    model,
-                    choices: [
-                      {
-                        index: 0,
-                        delta: { content: delta.text },
-                        finish_reason: null,
-                      },
-                    ],
-                  };
-                  controller.enqueue(
-                    encoder.encode(`data: ${JSON.stringify(chunkObj)}\n\n`),
-                  );
-                } else if (
-                  delta?.type === 'input_json_delta' &&
-                  typeof delta.partial_json === 'string'
-                ) {
-                  if (syntheticBlockIndices.has(blockIdx)) {
-                    // Stream as standard text content for structured output
-                    const chunkObj = {
-                      id: messageId,
-                      object: 'chat.completion.chunk',
-                      created: createdAt,
-                      model,
-                      choices: [
-                        {
-                          index: 0,
-                          delta: { content: delta.partial_json },
-                          finish_reason: null,
-                        },
-                      ],
-                    };
-                    controller.enqueue(
-                      encoder.encode(`data: ${JSON.stringify(chunkObj)}\n\n`),
-                    );
-                  } else {
-                    const toolIdx = blockIndexToToolIndex.get(blockIdx) ?? 0;
-                    const chunkObj = {
-                      id: messageId,
-                      object: 'chat.completion.chunk',
-                      created: createdAt,
-                      model,
-                      choices: [
-                        {
-                          index: 0,
-                          delta: {
-                            tool_calls: [
-                              {
-                                index: toolIdx,
-                                function: {
-                                  arguments: delta.partial_json,
-                                },
-                              },
-                            ],
-                          },
-                          finish_reason: null,
-                        },
-                      ],
-                    };
-                    controller.enqueue(
-                      encoder.encode(`data: ${JSON.stringify(chunkObj)}\n\n`),
-                    );
-                  }
-                }
-              }
-              // 4. Message delta event
-              else if (
-                currentEventType === 'message_delta' ||
-                parsed.type === 'message_delta'
-              ) {
-                let finishReason = this.mapStopReason(parsed.delta?.stop_reason);
-                if (
-                  syntheticBlockIndices.size > 0 &&
-                  finishReason === 'tool_calls'
-                ) {
-                  finishReason = 'stop';
-                }
+                syntheticBlockIndices.add(blockIdx);
+              } else {
+                const toolIdx = nextToolIndex++;
+                blockIndexToToolIndex.set(blockIdx, toolIdx);
 
                 const chunkObj = {
                   id: messageId,
@@ -684,34 +568,185 @@ export class AnthropicAdapter implements ProviderAdapter {
                   choices: [
                     {
                       index: 0,
-                      delta: {},
-                      finish_reason: finishReason,
+                      delta: {
+                        tool_calls: [
+                          {
+                            index: toolIdx,
+                            id: contentBlock.id || `call_${Date.now()}`,
+                            type: 'function',
+                            function: {
+                              name: contentBlock.name || '',
+                              arguments: '',
+                            },
+                          },
+                        ],
+                      },
+                      finish_reason: null,
                     },
                   ],
-                  usage: parsed.usage
-                    ? {
-                        completion_tokens: parsed.usage.output_tokens,
-                      }
-                    : undefined,
                 };
                 controller.enqueue(
                   encoder.encode(`data: ${JSON.stringify(chunkObj)}\n\n`),
                 );
               }
-              // 5. Message stop event
-              else if (
-                currentEventType === 'message_stop' ||
-                parsed.type === 'message_stop'
-              ) {
-                controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-              }
-            } catch {
-              // Ignore unparseable SSE lines
+            } else if (contentBlock?.type === 'text' && contentBlock.text) {
+              const chunkObj = {
+                id: messageId,
+                object: 'chat.completion.chunk',
+                created: createdAt,
+                model,
+                choices: [
+                  {
+                    index: 0,
+                    delta: { content: contentBlock.text },
+                    finish_reason: null,
+                  },
+                ],
+              };
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(chunkObj)}\n\n`),
+              );
             }
           }
+          // 3. Content block delta event
+          else if (
+            currentEventType === 'content_block_delta' ||
+            parsed.type === 'content_block_delta'
+          ) {
+            const blockIdx = parsed.index as number;
+            const delta = parsed.delta;
+
+            if (delta?.type === 'text_delta' && delta.text) {
+              const chunkObj = {
+                id: messageId,
+                object: 'chat.completion.chunk',
+                created: createdAt,
+                model,
+                choices: [
+                  {
+                    index: 0,
+                    delta: { content: delta.text },
+                    finish_reason: null,
+                  },
+                ],
+              };
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(chunkObj)}\n\n`),
+              );
+            } else if (
+              delta?.type === 'input_json_delta' &&
+              typeof delta.partial_json === 'string'
+            ) {
+              if (syntheticBlockIndices.has(blockIdx)) {
+                // Stream as standard text content for structured output
+                const chunkObj = {
+                  id: messageId,
+                  object: 'chat.completion.chunk',
+                  created: createdAt,
+                  model,
+                  choices: [
+                    {
+                      index: 0,
+                      delta: { content: delta.partial_json },
+                      finish_reason: null,
+                    },
+                  ],
+                };
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify(chunkObj)}\n\n`),
+                );
+              } else {
+                const toolIdx = blockIndexToToolIndex.get(blockIdx) ?? 0;
+                const chunkObj = {
+                  id: messageId,
+                  object: 'chat.completion.chunk',
+                  created: createdAt,
+                  model,
+                  choices: [
+                    {
+                      index: 0,
+                      delta: {
+                        tool_calls: [
+                          {
+                            index: toolIdx,
+                            function: {
+                              arguments: delta.partial_json,
+                            },
+                          },
+                        ],
+                      },
+                      finish_reason: null,
+                    },
+                  ],
+                };
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify(chunkObj)}\n\n`),
+                );
+              }
+            }
+          }
+          // 4. Message delta event
+          else if (
+            currentEventType === 'message_delta' ||
+            parsed.type === 'message_delta'
+          ) {
+            let finishReason = this.mapStopReason(parsed.delta?.stop_reason);
+            if (
+              syntheticBlockIndices.size > 0 &&
+              finishReason === 'tool_calls'
+            ) {
+              finishReason = 'stop';
+            }
+
+            const chunkObj = {
+              id: messageId,
+              object: 'chat.completion.chunk',
+              created: createdAt,
+              model,
+              choices: [
+                {
+                  index: 0,
+                  delta: {},
+                  finish_reason: finishReason,
+                },
+              ],
+              usage: parsed.usage
+                ? {
+                    completion_tokens: parsed.usage.output_tokens,
+                  }
+                : undefined,
+            };
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(chunkObj)}\n\n`),
+            );
+          }
+          // 5. Message stop event
+          else if (
+            currentEventType === 'message_stop' ||
+            parsed.type === 'message_stop'
+          ) {
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          }
+        } catch {
+          // Ignore unparseable SSE lines
+        }
+      }
+    };
+
+    const transformStream = new TransformStream<Uint8Array, Uint8Array>({
+      transform: (chunk, controller) => {
+        buffer += decoder.decode(chunk, { stream: true });
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          processLine(line, controller);
         }
       },
       flush: (controller) => {
+        if (buffer.trim()) {
+          processLine(buffer, controller);
+        }
         controller.enqueue(encoder.encode('data: [DONE]\n\n'));
       },
     });

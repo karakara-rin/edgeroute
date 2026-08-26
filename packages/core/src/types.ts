@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import type { ComplexityFeatures, ComplexityWeights } from './complexity.js';
+import type { CacheStore } from './cache/types.js';
+import type { CostSavingsComparison } from './cost.js';
 
 export const ComplexityWeightsSchema = z.object({
   code: z.number().nonnegative().optional(),
@@ -91,7 +93,7 @@ export const CacheConfigSchema = z.object({
   /** Maximum allowable temperature for caching (e.g. 0.0 or 0.5; prompts with temperature above this will bypass cache) */
   maxTemperature: z.number().min(0).max(2).optional(),
   /** Optional custom cache store instance (e.g. InMemoryCacheStore, CloudflareKVCacheStore) */
-  store: z.custom<any>().optional(),
+  store: z.custom<CacheStore>().optional(),
 });
 
 export type CacheConfig = z.infer<typeof CacheConfigSchema>;
@@ -158,4 +160,59 @@ export interface ModelPricing {
   inputPerMillion: number;
   outputPerMillion: number;
 }
+
+export type CacheStatus = 'HIT' | 'MISS' | 'BYPASS' | 'SKIPPED';
+
+export interface RouteEngineRequest {
+  prompt: string;
+  temperature?: number;
+  cacheControl?: string;
+  bypassCache?: boolean;
+  storeAllowed?: boolean;
+  customTtl?: number;
+  explicitProvider?: ProviderType;
+  stream?: boolean;
+}
+
+export interface RouteCallerResult<T = any> {
+  response: T;
+  ok?: boolean;
+  status?: number;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
+  headers?: Record<string, string> | Headers;
+  actualModel?: string;
+  actualProvider?: ProviderType;
+}
+
+export type RouteCaller<T = any> = (
+  model: string,
+  explicitProvider?: ProviderType,
+) => Promise<RouteCallerResult<T>>;
+
+export interface RouteEngineExecutionResult<T = any> {
+  fromCache: boolean;
+  cachedResponse?: any;
+  cacheStatus: CacheStatus;
+  cacheScore?: number;
+  cacheLatencyMs?: number;
+  classification: ClassificationResult;
+  actualModel: string;
+  actualProvider: ProviderType;
+  retriedWithFallback: boolean;
+  response?: T;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
+  costSavings?: CostSavingsComparison;
+  savedCostUSD?: number;
+  headers: Record<string, string>;
+  queryVector?: number[];
+}
+
 

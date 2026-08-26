@@ -2,10 +2,10 @@ import { Hono } from 'hono';
 import {
   type EdgeRouteConfig,
   type SemanticCacheManager,
+  EdgeRouteEngine,
   SemanticClassifier,
-  compareRoutingCost,
 } from '@edgeroute/core';
-import { forwardChatCompletion } from './proxy.js';
+import { dispatchProviderRequest } from './providers/index.js';
 import { captureAndCacheStream, createCachedStream } from './streaming.js';
 
 export interface ChatCompletionToolCall {
@@ -101,10 +101,28 @@ export function extractUserPrompt(messages: ChatCompletionMessage[]): string {
 }
 
 export function createRouterRoutes(
-  config: EdgeRouteConfig,
-  classifier: SemanticClassifier,
+  configOrEngine: EdgeRouteConfig | EdgeRouteEngine,
+  classifierOrEngine?: SemanticClassifier | EdgeRouteEngine,
   cacheManager?: SemanticCacheManager,
 ) {
+  let engine: EdgeRouteEngine;
+  let config: EdgeRouteConfig;
+
+  if (configOrEngine instanceof EdgeRouteEngine) {
+    engine = configOrEngine;
+    config = engine.config;
+  } else if (classifierOrEngine instanceof EdgeRouteEngine) {
+    engine = classifierOrEngine;
+    config = engine.config;
+  } else {
+    config = configOrEngine;
+    engine = new EdgeRouteEngine({
+      config,
+      classifier: classifierOrEngine,
+      cacheManager,
+    });
+  }
+
   const app = new Hono();
 
   // Health check endpoint
@@ -114,7 +132,7 @@ export function createRouterRoutes(
       version: '0.1.0',
       defaultModel: config.defaultModel,
       routesCount: config.routes.length,
-      cacheEnabled: cacheManager?.isEnabled() ?? false,
+      cacheEnabled: engine.cacheManager?.isEnabled() ?? false,
     });
   });
 
@@ -143,191 +161,138 @@ export function createRouterRoutes(
     const prompt = extractUserPrompt(body.messages || []);
     const reqHeaders = c.req.raw.headers;
 
-    // Cache control flags (0ms overhead)
     const cacheControlHeader = reqHeaders.get('cache-control') || '';
-    const isBypassRequested =
+    const bypassCache =
       reqHeaders.get('x-edgeroute-cache-bypass') === 'true' ||
       cacheControlHeader.includes('no-cache') ||
       cacheControlHeader.includes('no-store');
-    const isStoreAllowed = !cacheControlHeader.includes('no-store');
-    const isCacheableTemperature = cacheManager ? cacheManager.isCacheable(body.temperature) : true;
+    const storeAllowed = !cacheControlHeader.includes('no-store');
     const customTtlHeader = reqHeaders.get('x-edgeroute-cache-ttl');
     const customTtl = customTtlHeader ? parseInt(customTtlHeader, 10) : undefined;
 
-    let cacheStatus: 'HIT' | 'MISS' | 'BYPASS' | 'SKIPPED' = 'MISS';
-    if (isBypassRequested) {
-      cacheStatus = 'BYPASS';
-    } else if (!isCacheableTemperature) {
-      cacheStatus = 'SKIPPED';
-    }
+    // Execute through Core Engine
+    const result = await engine.execute(
+      {
+        prompt,
+        temperature: body.temperature,
+        cacheControl: cacheControlHeader,
+        bypassCache,
+        storeAllowed,
+        customTtl,
+        stream: body.stream,
+      },
+      async (targetModel, explicitProvider) => {
+        const { response, provider } = await dispatchProviderRequest(
+          {
+            model: targetModel,
+            body,
+            clientHeaders: reqHeaders,
+            config,
+          },
+          explicitProvider,
+        );
 
-    // 1. Semantic Cache Lookup Layer
-    let queryVector: number[] = [];
-    if (
-      cacheManager &&
-      cacheManager.isEnabled() &&
-      cacheStatus === 'MISS' &&
-      prompt
-    ) {
-      const cacheLookup = await cacheManager.find(prompt);
-      queryVector = cacheLookup.queryVector;
+        let parsedBody: any = undefined;
+        let usage: any = undefined;
 
-      if (cacheLookup.hit && cacheLookup.match) {
-        const match = cacheLookup.match;
-        const targetModel = match.entry.metadata?.model || config.defaultModel;
-        const savedCostUSD = cacheManager.calculateSavedCost(match.entry);
-
-        const cacheHeaders = new Headers({
-          'Content-Type': body.stream ? 'text/event-stream' : 'application/json',
-          'X-EdgeRoute-Cache': 'HIT',
-          'X-EdgeRoute-Score': match.score.toString(),
-          'X-EdgeRoute-Cache-Latency': `${cacheLookup.latencyMs}ms`,
-          'X-EdgeRoute-Target-Model': targetModel,
-          'X-EdgeRoute-Cost-Saved-USD': savedCostUSD.toString(),
-          'X-EdgeRoute-Cost-Saved-Percent': '100%',
-        });
-
-        if (body.stream) {
-          const stream = createCachedStream(match.entry.response, targetModel);
-          return new Response(stream, {
-            status: 200,
-            headers: cacheHeaders,
-          });
+        if (!body.stream && response.ok) {
+          try {
+            parsedBody = await response.json();
+            usage = parsedBody.usage;
+          } catch {
+            // Keep parsedBody undefined if not JSON
+          }
         }
 
-        return new Response(JSON.stringify(match.entry.response), {
-          status: 200,
-          headers: cacheHeaders,
-        });
-      }
-    }
-
-    // 2. Routing Classification Layer
-    const classification = await classifier.classify(prompt);
-
-    // Find explicit provider from route definition if configured
-    const matchedRouteDef = config.routes.find(
-      (r) => r.name === classification.matchedRoute,
-    );
-    const explicitProvider = matchedRouteDef?.provider;
-
-    // Forward to upstream provider
-    const upstream = await forwardChatCompletion({
-      model: classification.targetModel,
-      body,
-      clientHeaders: reqHeaders,
-      config,
-      explicitProvider,
-    });
-
-    const headers = new Headers(upstream.response.headers);
-
-    // Attach EdgeRoute metadata headers
-    headers.set('X-EdgeRoute-Cache', cacheStatus);
-    headers.set('X-EdgeRoute-Matched-Route', classification.matchedRoute);
-    headers.set('X-EdgeRoute-Target-Model', upstream.actualModel);
-    headers.set('X-EdgeRoute-Provider', upstream.actualProvider);
-    headers.set(
-      'X-EdgeRoute-Path',
-      upstream.retriedWithFallback ? 'fallback-retry' : classification.path,
-    );
-    headers.set('X-EdgeRoute-Score', classification.score.toString());
-    headers.set('X-EdgeRoute-Latency-Routing', `${classification.latencyMs}ms`);
-
-    // Handle non-streaming response & save to cache
-    if (!body.stream && upstream.response.ok) {
-      try {
-        const responseData = (await upstream.response.json()) as {
-          usage?: {
-            prompt_tokens?: number;
-            completion_tokens?: number;
-            total_tokens?: number;
-          };
-          [key: string]: unknown;
+        return {
+          response: parsedBody ?? response,
+          ok: response.ok,
+          status: response.status,
+          headers: response.headers,
+          actualModel: targetModel,
+          actualProvider: provider,
+          usage,
         };
+      },
+    );
 
-        if (responseData.usage) {
-          const savings = compareRoutingCost(
-            upstream.actualModel,
-            config.defaultModel,
-            responseData.usage.prompt_tokens || 0,
-            responseData.usage.completion_tokens || 0,
-            config.customPricing,
-          );
-          headers.set('X-EdgeRoute-Cost-Saved-USD', savings.savingsUSD.toString());
-          headers.set(
-            'X-EdgeRoute-Cost-Saved-Percent',
-            `${savings.savingsPercentage}%`,
-          );
-        }
-
-        // Save to semantic cache in background if eligible
-        if (
-          cacheManager &&
-          cacheManager.isEnabled() &&
-          isStoreAllowed &&
-          isCacheableTemperature &&
-          prompt
-        ) {
-          cacheManager
-            .save({
-              prompt,
-              response: responseData,
-              model: upstream.actualModel,
-              vector: queryVector,
-              ttl: customTtl,
-              usage: responseData.usage,
-            })
-            .catch(() => {});
-        }
-
-        return new Response(JSON.stringify(responseData), {
-          status: upstream.response.status,
-          headers,
+    // 1. If Cache Hit
+    if (result.fromCache && result.cachedResponse) {
+      if (body.stream) {
+        const stream = createCachedStream(result.cachedResponse, result.actualModel);
+        return new Response(stream, {
+          status: 200,
+          headers: result.headers,
         });
-      } catch {
-        // If JSON parsing fails, return raw body
       }
+      return new Response(JSON.stringify(result.cachedResponse), {
+        status: 200,
+        headers: result.headers,
+      });
     }
 
-    // Handle streaming response & tee to cache
-    if (body.stream && upstream.response.ok && upstream.response.body) {
+    // 2. If Streaming
+    if (body.stream) {
+      const upstreamResponse = result.response as Response;
+      const headers = new Headers(result.headers);
+
       if (
-        cacheManager &&
-        cacheManager.isEnabled() &&
-        isStoreAllowed &&
-        isCacheableTemperature &&
+        upstreamResponse?.ok &&
+        upstreamResponse.body &&
+        engine.cacheManager?.isEnabled() &&
+        storeAllowed &&
         prompt
       ) {
         const capturedStream = captureAndCacheStream(
-          upstream.response.body,
-          upstream.actualModel,
+          upstreamResponse.body,
+          result.actualModel,
           async (fullResponse) => {
-            await cacheManager.save({
+            await engine.saveStreamResponse(
               prompt,
-              response: fullResponse,
-              model: upstream.actualModel,
-              vector: queryVector,
-              ttl: customTtl,
-              usage: fullResponse.usage as any,
-            });
+              fullResponse,
+              result.actualModel,
+              result.queryVector,
+              customTtl,
+              fullResponse.usage as any,
+            );
           },
         );
 
         return new Response(capturedStream, {
-          status: upstream.response.status,
+          status: upstreamResponse.status,
           headers,
         });
       }
+
+      return new Response(upstreamResponse?.body, {
+        status: upstreamResponse?.status ?? 200,
+        headers,
+      });
     }
 
-    // Stream pass-through fallback
-    return new Response(upstream.response.body, {
-      status: upstream.response.status,
+    // 3. Non-streaming JSON response
+    const headers = new Headers(result.headers);
+    if (result.response && typeof result.response === 'object' && !(result.response instanceof Response)) {
+      return new Response(JSON.stringify(result.response), {
+        status: 200,
+        headers,
+      });
+    }
+
+    if (result.response instanceof Response) {
+      return new Response(result.response.body, {
+        status: result.response.status,
+        headers,
+      });
+    }
+
+    return new Response(JSON.stringify(result.response), {
+      status: 200,
       headers,
     });
   });
 
   return app;
 }
+
 
