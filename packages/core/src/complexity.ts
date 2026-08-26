@@ -68,6 +68,41 @@ const STRICT_CONSTRAINTS_EN_REGEX =
 const STRICT_CONSTRAINTS_JA_REGEX =
   /(?:制約条件|必ず|厳格に|絶対(?:に)?|使用禁止|満たすべき要件|使わずに|除外して|以下の条件|ルール:)/gi;
 
+// Maximum prompt characters to scan for complexity features (prevents blocking event loop on large contexts)
+const MAX_SCAN_CHARS = 4000;
+
+/**
+ * Fast match counter using regex without allocating match arrays.
+ * Supports early-exit when maxCount is reached.
+ */
+function countMatches(str: string, regex: RegExp, maxCount = 20): number {
+  regex.lastIndex = 0;
+  let count = 0;
+  while (regex.test(str)) {
+    count++;
+    if (count >= maxCount) break;
+  }
+  regex.lastIndex = 0;
+  return count;
+}
+
+/**
+ * Computes code block match count and total characters without array allocations.
+ */
+function getCodeBlockLength(str: string, regex: RegExp): { count: number; totalChars: number } {
+  regex.lastIndex = 0;
+  let count = 0;
+  let totalChars = 0;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(str)) !== null) {
+    count++;
+    totalChars += match[0].length;
+    if (count >= 10) break;
+  }
+  regex.lastIndex = 0;
+  return { count, totalChars };
+}
+
 /**
  * Extracts normalized complexity features from input prompt.
  */
@@ -84,53 +119,53 @@ export function extractComplexityFeatures(prompt: string): ComplexityFeatures {
     };
   }
 
-  const text = prompt;
-  const charCount = text.length;
+  const charCount = prompt.length;
   // Estimate tokens (~4 characters per token for English/code, ~1.5 for CJK)
   const estimatedTokens = Math.max(1, Math.round(charCount / 3.2));
 
-  // 1. Code Density Feature
-  let codeScore = 0;
-  const codeBlocks = text.match(CODE_BLOCK_REGEX) || [];
-  const inlineCodes = text.match(INLINE_CODE_REGEX) || [];
-  const codeKeywords = text.match(CODE_KEYWORDS_REGEX) || [];
-  const codeSymbols = text.match(CODE_SYNTAX_SYMBOLS_REGEX) || [];
+  // Limit scan text to avoid event-loop blocking on large prompts
+  const scanText = charCount > MAX_SCAN_CHARS ? prompt.slice(0, MAX_SCAN_CHARS) : prompt;
+  const scanLength = scanText.length;
 
-  if (codeBlocks.length > 0) {
-    let codeBlockChars = 0;
-    for (const block of codeBlocks) {
-      codeBlockChars += block.length;
-    }
-    const blockRatio = Math.min(1, codeBlockChars / charCount);
+  // 1. Code Density Feature (Zero-allocation counters)
+  let codeScore = 0;
+  const { count: codeBlockCount, totalChars: codeBlockChars } = getCodeBlockLength(scanText, CODE_BLOCK_REGEX);
+
+  if (codeBlockCount > 0) {
+    const blockRatio = Math.min(1, codeBlockChars / scanLength);
     codeScore = Math.min(1, 0.6 + blockRatio * 0.4);
   } else {
-    const keywordWeight = Math.min(0.7, codeKeywords.length * 0.2);
-    const inlineWeight = Math.min(0.3, inlineCodes.length * 0.1);
-    const hasCodeIndicators = codeKeywords.length > 0 || inlineCodes.length > 0;
+    const inlineCodeCount = countMatches(scanText, INLINE_CODE_REGEX, 5);
+    const codeKeywordCount = countMatches(scanText, CODE_KEYWORDS_REGEX, 10);
+    const codeSymbolCount = countMatches(scanText, CODE_SYNTAX_SYMBOLS_REGEX, 15);
+
+    const keywordWeight = Math.min(0.7, codeKeywordCount * 0.2);
+    const inlineWeight = Math.min(0.3, inlineCodeCount * 0.1);
+    const hasCodeIndicators = codeKeywordCount > 0 || inlineCodeCount > 0;
     const symbolWeight =
-      hasCodeIndicators && codeSymbols.length >= 2
-        ? Math.min(0.25, (codeSymbols.length / Math.max(1, charCount / 30)) * 0.2)
+      hasCodeIndicators && codeSymbolCount >= 2
+        ? Math.min(0.25, (codeSymbolCount / Math.max(1, scanLength / 30)) * 0.2)
         : 0;
     codeScore = Math.min(1, keywordWeight + inlineWeight + symbolWeight);
   }
 
   // 2. Reasoning Cues Feature
-  const reasoningEn = text.match(REASONING_CUES_EN_REGEX) || [];
-  const reasoningJa = text.match(REASONING_CUES_JA_REGEX) || [];
-  const totalReasoningCues = reasoningEn.length + reasoningJa.length;
+  const reasoningEnCount = countMatches(scanText, REASONING_CUES_EN_REGEX, 5);
+  const reasoningJaCount = countMatches(scanText, REASONING_CUES_JA_REGEX, 5);
+  const totalReasoningCues = reasoningEnCount + reasoningJaCount;
   const reasoningScore = Math.min(1, totalReasoningCues * 0.35 + (totalReasoningCues > 0 ? 0.25 : 0));
 
   // 3. Math & Logic Notation Feature
-  const mathMatches = text.match(MATH_LATEX_REGEX) || [];
-  const bigOMatches = text.match(MATH_COMPLEXITY_BIG_O_REGEX) || [];
-  const totalMathSymbols = mathMatches.length + bigOMatches.length * 2;
+  const mathMatchesCount = countMatches(scanText, MATH_LATEX_REGEX, 5);
+  const bigOMatchesCount = countMatches(scanText, MATH_COMPLEXITY_BIG_O_REGEX, 3);
+  const totalMathSymbols = mathMatchesCount + bigOMatchesCount * 2;
   const mathScore = Math.min(1, totalMathSymbols > 0 ? 0.35 + totalMathSymbols * 0.25 : 0);
 
   // 4. Constraints & Multi-step Directives Feature
-  const listDirectives = text.match(CONSTRAINT_LIST_REGEX) || [];
-  const strictEn = text.match(STRICT_CONSTRAINTS_EN_REGEX) || [];
-  const strictJa = text.match(STRICT_CONSTRAINTS_JA_REGEX) || [];
-  const totalConstraints = listDirectives.length + strictEn.length * 2 + strictJa.length * 2;
+  const listDirectivesCount = countMatches(scanText, CONSTRAINT_LIST_REGEX, 5);
+  const strictEnCount = countMatches(scanText, STRICT_CONSTRAINTS_EN_REGEX, 3);
+  const strictJaCount = countMatches(scanText, STRICT_CONSTRAINTS_JA_REGEX, 3);
+  const totalConstraints = listDirectivesCount + strictEnCount * 2 + strictJaCount * 2;
   const constraintScore = Math.min(1, totalConstraints > 0 ? Math.min(1, totalConstraints * 0.2) : 0);
 
   // 5. Context Length Scaling (Sigmoid function: ~250 chars -> 0.2, ~1000 chars -> 0.5, ~3000 chars -> 0.85)

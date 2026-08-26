@@ -5,15 +5,10 @@ import type {
   LanguageModelV1StreamPart,
 } from '@ai-sdk/provider';
 import {
-  type ClassificationResult,
   type CostSavingsComparison,
   type EdgeRouteConfig,
-  type EmbeddingProvider,
-  SemanticCacheManager,
-  SemanticClassifier,
+  EdgeRouteEngine,
   compareRoutingCost,
-  createEmbeddingProvider,
-  createSemanticCacheManager,
   defineConfig,
 } from '@edgeroute/core';
 import { autoResolveModel } from './auto-resolver.js';
@@ -31,45 +26,22 @@ export class EdgeRouteLanguageModel implements LanguageModelV1 {
 
   private readonly config: EdgeRouteConfig;
   private readonly rawAIConfig: EdgeRouteAIConfig;
-  private readonly embeddingProvider: EmbeddingProvider;
-  private readonly classifier: SemanticClassifier;
-  private readonly cacheManager: SemanticCacheManager | null = null;
+  private readonly engine: EdgeRouteEngine;
   private readonly models: Record<string, LanguageModelV1>;
-  private initialized = false;
-  private initPromise: Promise<void> | null = null;
 
   constructor(aiConfig: EdgeRouteAIConfig) {
     this.rawAIConfig = aiConfig;
     this.config = defineConfig(aiConfig);
     this.modelId = `edgeroute-router(${this.config.defaultModel})`;
     this.models = aiConfig.models ?? {};
-
-    this.embeddingProvider = createEmbeddingProvider(this.config);
-    this.classifier = new SemanticClassifier(
-      this.config,
-      this.embeddingProvider,
-    );
-
-    if (this.config.cache?.enabled !== false && this.config.cache) {
-      this.cacheManager = createSemanticCacheManager(
-        this.config,
-        this.embeddingProvider,
-      );
-    }
+    this.engine = new EdgeRouteEngine(this.config);
   }
 
   /**
    * Ensures semantic vectors are initialized before classification.
    */
   private async ensureInitialized(): Promise<void> {
-    if (this.initialized) return;
-    if (!this.initPromise) {
-      this.initPromise = (async () => {
-        await this.classifier.initialize();
-        this.initialized = true;
-      })();
-    }
-    await this.initPromise;
+    await this.engine.initialize();
   }
 
   /**
@@ -133,170 +105,137 @@ export class EdgeRouteLanguageModel implements LanguageModelV1 {
     const promptText = extractPromptText(options.prompt);
     const temperature = options.temperature;
 
-    // 1. Semantic Cache Lookup
-    if (this.cacheManager && this.cacheManager.isCacheable(temperature)) {
-      const lookup = await this.cacheManager.find(promptText);
-      if (lookup.hit && lookup.match) {
-        const match = lookup.match;
-        const metadata: EdgeRouteMetadata = {
-          matchedRoute: 'cache',
-          targetModel: 'cache',
-          routingPath: 'cache',
-          score: match.score,
-          latencyMs: lookup.latencyMs,
-          cacheHit: true,
-        };
+    let targetModelInstance: LanguageModelV1;
 
-        const headers: Record<string, string> = {
-          'x-edgeroute-cache': 'HIT',
-          'x-edgeroute-cache-similarity': match.score.toFixed(4),
-          'x-edgeroute-target-model': 'cache',
-          'x-edgeroute-matched-route': 'cache',
-          'x-edgeroute-path': 'cache',
-        };
-
-        const content =
-          typeof match.entry.response === 'string'
-            ? match.entry.response
-            : (match.entry.response.content as string) || '';
-
-        return {
-          text: content,
-          finishReason: 'stop',
-          usage: {
-            promptTokens: match.entry.metadata?.usage?.prompt_tokens ?? 0,
-            completionTokens:
-              match.entry.metadata?.usage?.completion_tokens ?? 0,
-          },
-          rawCall: {
-            rawPrompt: options.prompt,
-            rawSettings: { temperature },
-          },
-          rawResponse: {
-            headers,
-          },
-          response: {
-            id: match.entry.id,
-            timestamp: new Date(match.entry.createdAt),
-            modelId: 'cache',
-          },
-          providerMetadata: {
-            edgeroute: metadata as unknown as Record<string, JSONValue>,
-          },
-        };
-      }
-    }
-
-    // 2. Semantic Routing Classification
-    const classification = await this.classifier.classify(promptText);
-    const estimatedTokens = Math.max(10, Math.ceil(promptText.length / 4));
-    let costSavings = this.calculateCostSavings(
-      classification.targetModel,
-      estimatedTokens,
-      estimatedTokens,
+    const result = await this.engine.execute(
+      {
+        prompt: promptText,
+        temperature,
+        stream: false,
+      },
+      async (modelToCall) => {
+        try {
+          targetModelInstance = await this.resolveModel(modelToCall);
+          const generated = await targetModelInstance.doGenerate(options);
+          return {
+            response: generated,
+            ok: true,
+            status: 200,
+            actualModel: modelToCall,
+            actualProvider: 'openai',
+            usage: {
+              prompt_tokens: generated.usage?.promptTokens,
+              completion_tokens: generated.usage?.completionTokens,
+              total_tokens:
+                (generated.usage?.promptTokens ?? 0) +
+                (generated.usage?.completionTokens ?? 0),
+            },
+            headers: (generated.rawResponse?.headers ?? {}) as Record<string, string>,
+          };
+        } catch (err) {
+          console.warn(
+            `[EdgeRoute] Error invoking target model "${modelToCall}". Falling back to defaultModel "${this.config.defaultModel}". Error:`,
+            err,
+          );
+          throw err;
+        }
+      },
     );
 
+    // 1. Cache Hit handling
+    if (result.fromCache && result.cachedResponse) {
+      const matchScore = result.cacheScore ?? 1.0;
+      const metadata: EdgeRouteMetadata = {
+        matchedRoute: 'cache',
+        targetModel: 'cache',
+        routingPath: 'cache',
+        score: matchScore,
+        latencyMs: result.cacheLatencyMs ?? 0,
+        cacheHit: true,
+      };
+
+      const headers: Record<string, string> = {
+        'x-edgeroute-cache': 'HIT',
+        'x-edgeroute-cache-similarity': matchScore.toFixed(4),
+        'x-edgeroute-target-model': 'cache',
+        'x-edgeroute-matched-route': 'cache',
+        'x-edgeroute-path': 'cache',
+      };
+
+      const content =
+        typeof result.cachedResponse === 'string'
+          ? result.cachedResponse
+          : (result.cachedResponse.content as string) || '';
+
+      return {
+        text: content,
+        finishReason: 'stop',
+        usage: {
+          promptTokens: result.usage?.prompt_tokens ?? 0,
+          completionTokens: result.usage?.completion_tokens ?? 0,
+        },
+        rawCall: {
+          rawPrompt: options.prompt,
+          rawSettings: { temperature },
+        },
+        rawResponse: { headers },
+        response: {
+          id: `cache-${Date.now()}`,
+          timestamp: new Date(),
+          modelId: 'cache',
+        },
+        providerMetadata: {
+          edgeroute: metadata as unknown as Record<string, JSONValue>,
+        },
+      };
+    }
+
+    // 2. Route Matched Callback
     if (this.rawAIConfig.onRouteMatched) {
-      this.rawAIConfig.onRouteMatched(classification, costSavings);
+      this.rawAIConfig.onRouteMatched(result.classification, result.costSavings);
     }
 
-    // 3. Dispatch to Target Model with Automatic Failover
-    let targetModelInstance = await this.resolveModel(
-      classification.targetModel,
-    );
-    let result: Awaited<ReturnType<LanguageModelV1['doGenerate']>>;
-    let actualDispatchedModel = classification.targetModel;
-    let fallbackTriggered = false;
+    // 3. Construct EdgeRoute Telemetry
+    const generated = result.response as Awaited<ReturnType<LanguageModelV1['doGenerate']>>;
 
-    try {
-      result = await targetModelInstance.doGenerate(options);
-    } catch (err) {
-      const maxRetries = this.config.maxRetries ?? 1;
-      if (
-        maxRetries > 0 &&
-        classification.targetModel !== this.config.defaultModel
-      ) {
-        console.warn(
-          `[EdgeRoute] Error invoking target model "${classification.targetModel}". Falling back to defaultModel "${this.config.defaultModel}". Error:`,
-          err,
-        );
-        targetModelInstance = await this.resolveModel(this.config.defaultModel);
-        result = await targetModelInstance.doGenerate(options);
-        actualDispatchedModel = this.config.defaultModel;
-        fallbackTriggered = true;
-      } else {
-        throw err;
-      }
-    }
-
-    // Re-calculate cost savings with actual token usage
-    if (result.usage) {
-      costSavings = this.calculateCostSavings(
-        actualDispatchedModel,
-        result.usage.promptTokens,
-        result.usage.completionTokens,
-      );
-    }
-
-    // 4. Construct EdgeRoute Telemetry & Headers
     const metadata: EdgeRouteMetadata = {
-      matchedRoute: classification.matchedRoute,
-      targetModel: actualDispatchedModel,
-      routingPath: fallbackTriggered ? 'fallback' : classification.path,
-      score: classification.score,
-      complexityScore: classification.complexityScore,
-      latencyMs: classification.latencyMs,
+      matchedRoute: result.classification.matchedRoute,
+      targetModel: result.actualModel,
+      routingPath: result.retriedWithFallback ? 'fallback' : result.classification.path,
+      score: result.classification.score,
+      complexityScore: result.classification.complexityScore,
+      latencyMs: result.classification.latencyMs,
       cacheHit: false,
-      costSavings,
-      ...(fallbackTriggered ? { fallbackTriggered: true } : {}),
+      costSavings: result.costSavings,
+      ...(result.retriedWithFallback ? { fallbackTriggered: true } : {}),
     };
 
-    const headers: Record<string, string> = {
-      ...(result.rawResponse?.headers ?? {}),
-      'x-edgeroute-target-model': actualDispatchedModel,
-      'x-edgeroute-matched-route': classification.matchedRoute,
-      'x-edgeroute-path': fallbackTriggered ? 'fallback' : classification.path,
-      'x-edgeroute-score': classification.score.toFixed(4),
-      'x-edgeroute-latency-ms': classification.latencyMs.toFixed(2),
+    const edgeRouteHeaders: Record<string, string> = {
+      ...(generated?.rawResponse?.headers ?? {}),
+      'x-edgeroute-target-model': result.actualModel,
+      'x-edgeroute-matched-route': result.classification.matchedRoute,
+      'x-edgeroute-path': result.retriedWithFallback ? 'fallback' : result.classification.path,
+      'x-edgeroute-score': result.classification.score.toFixed(4),
+      'x-edgeroute-latency-ms': result.classification.latencyMs.toFixed(2),
       'x-edgeroute-cache': 'MISS',
     };
 
-    if (fallbackTriggered) {
-      headers['x-edgeroute-fallback-triggered'] = 'true';
+    if (result.retriedWithFallback) {
+      edgeRouteHeaders['x-edgeroute-fallback-triggered'] = 'true';
     }
 
-    if (costSavings && costSavings.savingsPercentage !== undefined) {
-      headers['x-edgeroute-cost-savings'] = `${costSavings.savingsPercentage.toFixed(1)}%`;
-    }
-
-    // 5. Store in Semantic Cache
-    if (
-      this.cacheManager &&
-      this.cacheManager.isCacheable(temperature) &&
-      result.text
-    ) {
-      await this.cacheManager.save({
-        prompt: promptText,
-        response: { content: result.text },
-        model: actualDispatchedModel,
-        usage: {
-          prompt_tokens: result.usage?.promptTokens,
-          completion_tokens: result.usage?.completionTokens,
-          total_tokens:
-            (result.usage?.promptTokens ?? 0) +
-            (result.usage?.completionTokens ?? 0),
-        },
-      });
+    if (result.costSavings && result.costSavings.savingsPercentage !== undefined) {
+      edgeRouteHeaders['x-edgeroute-cost-savings'] = `${result.costSavings.savingsPercentage.toFixed(1)}%`;
     }
 
     return {
-      ...result,
+      ...generated,
       rawResponse: {
-        ...result.rawResponse,
-        headers,
+        ...generated.rawResponse,
+        headers: edgeRouteHeaders,
       },
       providerMetadata: {
-        ...result.providerMetadata,
+        ...generated.providerMetadata,
         edgeroute: metadata as unknown as Record<string, JSONValue>,
       },
     };
@@ -312,9 +251,9 @@ export class EdgeRouteLanguageModel implements LanguageModelV1 {
     const promptText = extractPromptText(options.prompt);
     const temperature = options.temperature;
 
-    // 1. Semantic Cache Lookup
-    if (this.cacheManager && this.cacheManager.isCacheable(temperature)) {
-      const lookup = await this.cacheManager.find(promptText);
+    // Check cache first via Engine Cache Manager
+    if (this.engine.cacheManager && this.engine.cacheManager.isCacheable(temperature)) {
+      const lookup = await this.engine.cacheManager.find(promptText);
       if (lookup.hit && lookup.match) {
         const match = lookup.match;
         const metadata: EdgeRouteMetadata = {
@@ -356,8 +295,7 @@ export class EdgeRouteLanguageModel implements LanguageModelV1 {
               finishReason: 'stop',
               usage: {
                 promptTokens: match.entry.metadata?.usage?.prompt_tokens ?? 0,
-                completionTokens:
-                  match.entry.metadata?.usage?.completion_tokens ?? 0,
+                completionTokens: match.entry.metadata?.usage?.completion_tokens ?? 0,
               },
               providerMetadata: {
                 edgeroute: metadata as unknown as Record<string, JSONValue>,
@@ -378,8 +316,8 @@ export class EdgeRouteLanguageModel implements LanguageModelV1 {
       }
     }
 
-    // 2. Semantic Routing Classification
-    const classification = await this.classifier.classify(promptText);
+    // Routing Classification
+    const classification = await this.engine.classifier.classify(promptText);
     const estimatedTokens = Math.max(10, Math.ceil(promptText.length / 4));
     const costSavings = this.calculateCostSavings(
       classification.targetModel,
@@ -391,10 +329,8 @@ export class EdgeRouteLanguageModel implements LanguageModelV1 {
       this.rawAIConfig.onRouteMatched(classification, costSavings);
     }
 
-    // 3. Dispatch to Target Model Stream with Automatic Failover
-    let targetModelInstance = await this.resolveModel(
-      classification.targetModel,
-    );
+    // Target Stream Dispatch with failover
+    let targetModelInstance = await this.resolveModel(classification.targetModel);
     let streamResult: Awaited<ReturnType<LanguageModelV1['doStream']>>;
     let actualDispatchedModel = classification.targetModel;
     let fallbackTriggered = false;
@@ -446,11 +382,10 @@ export class EdgeRouteLanguageModel implements LanguageModelV1 {
     }
 
     if (costSavings && costSavings.savingsPercentage !== undefined) {
-      edgeRouteHeaders['x-edgeroute-cost-savings'] =
-        `${costSavings.savingsPercentage.toFixed(1)}%`;
+      edgeRouteHeaders['x-edgeroute-cost-savings'] = `${costSavings.savingsPercentage.toFixed(1)}%`;
     }
 
-    const cacheManager = this.cacheManager;
+    const engine = this.engine;
     let accumulatedText = '';
 
     const transformStream = new TransformStream<
@@ -470,25 +405,27 @@ export class EdgeRouteLanguageModel implements LanguageModelV1 {
             },
           });
 
-          // Async Cache Storage
+          // Async Cache Storage via Engine
           if (
-            cacheManager &&
-            cacheManager.isCacheable(temperature) &&
+            engine.cacheManager &&
+            engine.cacheManager.isCacheable(temperature) &&
             accumulatedText.length > 0
           ) {
-            cacheManager
-              .save({
-                prompt: promptText,
-                response: { content: accumulatedText },
-                model: actualDispatchedModel,
-                usage: {
+            engine
+              .saveStreamResponse(
+                promptText,
+                { content: accumulatedText },
+                actualDispatchedModel,
+                undefined,
+                undefined,
+                {
                   prompt_tokens: chunk.usage?.promptTokens,
                   completion_tokens: chunk.usage?.completionTokens,
                   total_tokens:
                     (chunk.usage?.promptTokens ?? 0) +
                     (chunk.usage?.completionTokens ?? 0),
                 },
-              })
+              )
               .catch((err) => {
                 console.warn(
                   '[EdgeRoute Cache] Failed to store stream result in cache:',
@@ -515,3 +452,4 @@ export class EdgeRouteLanguageModel implements LanguageModelV1 {
     };
   }
 }
+

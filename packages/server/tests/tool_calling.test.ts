@@ -4,6 +4,8 @@ import {
   GeminiAdapter,
   GroqAdapter,
   createEdgeRouteServer,
+  captureAndCacheStream,
+  createCachedStream,
 } from '../src/index.js';
 import { type EdgeRouteConfig, defineConfig } from '@edgeroute/core';
 
@@ -699,6 +701,119 @@ describe('Tool Calling (Function Calling) Bidirectional Conversion', () => {
       expect(
         JSON.parse(json.choices[0]!.message.tool_calls[0]!.function.arguments),
       ).toEqual({ filepath: 'src/index.ts' });
+    });
+  });
+
+  describe('Streaming Tool Calls Caching & Replay', () => {
+    it('accumulates streamed tool_call chunks and builds fullResponse with tool_calls in captureAndCacheStream', async () => {
+      const encoder = new TextEncoder();
+      const chunks = [
+        'data: {"id":"chatcmpl-stream-tc","choices":[{"index":0,"delta":{"role":"assistant","content":null},"finish_reason":null}]}\n\n',
+        'data: {"id":"chatcmpl-stream-tc","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_123","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}\n\n',
+        'data: {"id":"chatcmpl-stream-tc","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"city\\": "}}]},"finish_reason":null}]}\n\n',
+        'data: {"id":"chatcmpl-stream-tc","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"Tokyo\\"}"}}]},"finish_reason":null}]}\n\n',
+        'data: {"id":"chatcmpl-stream-tc","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}\n\n',
+        'data: [DONE]\n\n',
+      ];
+
+      const upstreamStream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const c of chunks) {
+            controller.enqueue(encoder.encode(c));
+          }
+          controller.close();
+        },
+      });
+
+      let capturedResponse: Record<string, unknown> | null = null;
+      const clientStream = captureAndCacheStream(
+        upstreamStream,
+        'gpt-5.6-sol',
+        (full) => {
+          capturedResponse = full;
+        },
+      );
+
+      // Read client stream to trigger consumption
+      const reader = clientStream.getReader();
+      while (true) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+
+      // Allow background microtasks to complete
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(capturedResponse).not.toBeNull();
+      expect(capturedResponse!.object).toBe('chat.completion');
+      const choices = (capturedResponse!.choices as any[]) || [];
+      expect(choices[0].finish_reason).toBe('tool_calls');
+      expect(choices[0].message.role).toBe('assistant');
+      expect(choices[0].message.content).toBeNull();
+      expect(choices[0].message.tool_calls).toEqual([
+        {
+          id: 'call_123',
+          type: 'function',
+          function: {
+            name: 'get_weather',
+            arguments: '{"city": "Tokyo"}',
+          },
+        },
+      ]);
+    });
+
+    it('replays cached response with tool_calls via createCachedStream', async () => {
+      const cached = {
+        id: 'chatcmpl-cached-tc',
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [
+                {
+                  id: 'call_abc',
+                  type: 'function',
+                  function: {
+                    name: 'search_db',
+                    arguments: '{"query":"test"}',
+                  },
+                },
+              ],
+            },
+            finish_reason: 'tool_calls',
+          },
+        ],
+      };
+
+      const stream = createCachedStream(cached, 'gpt-5.6-sol');
+      const reader = stream.getReader();
+      const decoder = new TextDecoder();
+      let text = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value);
+      }
+
+      expect(text).toContain('search_db');
+      expect(text).toContain('call_abc');
+      expect(text).toContain('"finish_reason":"tool_calls"');
+      expect(text).toContain('data: [DONE]');
+
+      // Parse chunks and ensure concatenated arguments match
+      const lines = text.split(/\r?\n/);
+      let fullArgs = '';
+      for (const line of lines) {
+        if (line.startsWith('data:') && !line.includes('[DONE]')) {
+          const data = JSON.parse(line.slice(5).trim());
+          const tcArg = data.choices?.[0]?.delta?.tool_calls?.[0]?.function?.arguments;
+          if (tcArg) fullArgs += tcArg;
+        }
+      }
+      expect(fullArgs).toBe('{"query":"test"}');
     });
   });
 });

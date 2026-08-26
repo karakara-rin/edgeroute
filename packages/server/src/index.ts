@@ -1,9 +1,7 @@
 import {
   type EdgeRouteConfig,
   type EdgeRouteConfigInput,
-  SemanticClassifier,
-  createEmbeddingProvider,
-  createSemanticCacheManager,
+  EdgeRouteEngine,
   defineConfig,
 } from '@edgeroute/core';
 import { createRouterRoutes } from './routes.js';
@@ -20,20 +18,20 @@ export async function createEdgeRouteServer(
   rawConfig: EdgeRouteConfig | EdgeRouteConfigInput,
 ) {
   const config = defineConfig(rawConfig);
-  const embeddingProvider = createEmbeddingProvider(config);
-  const classifier = new SemanticClassifier(config, embeddingProvider);
-  const cacheManager = createSemanticCacheManager(config, embeddingProvider);
+  const engine = new EdgeRouteEngine(config);
 
   // Pre-calculate and cache route example vectors in-memory
-  await classifier.initialize();
+  await engine.initialize();
 
-  const app = createRouterRoutes(config, classifier, cacheManager);
+  const app = createRouterRoutes(config, engine);
 
   return {
     app,
-    classifier,
-    cacheManager,
-    embeddingProvider,
+    engine,
+    classifier: engine.classifier,
+    cacheManager: engine.cacheManager,
+    embeddingProvider: engine.embeddingProvider,
   };
 }
+
 

@@ -115,6 +115,21 @@ describe('ComplexityScorer performance & latency', () => {
     const avgLatency = latencies.reduce((a, b) => a + b, 0) / latencies.length;
     expect(avgLatency).toBeLessThan(0.5);
   });
+
+  it('should efficiently process very large prompts without CPU blocking', () => {
+    const scorer = new ComplexityScorer();
+    // 20,000 character prompt
+    const largePrompt = `Please analyze the system performance.\n` + 'Some normal context sentence repeated.\n'.repeat(500);
+
+    const start = performance.now();
+    const result = scorer.evaluate(largePrompt);
+    const duration = performance.now() - start;
+
+    expect(result.features.characterCount).toBe(largePrompt.length);
+    expect(result.features.estimatedTokens).toBeGreaterThan(5000);
+    // Bounded scan ensures execution is well under 2ms even on 20k char text
+    expect(duration).toBeLessThan(5);
+  });
 });
 
 describe('ComplexityClassifier Dynamic Routing', () => {
