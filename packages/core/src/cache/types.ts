@@ -70,3 +70,45 @@ export interface CloudflareKVNamespace {
     cursor?: string;
   }>;
 }
+
+/**
+ * Minimal Cloudflare Vectorize interface compatibility.
+ */
+export interface VectorizeVector {
+  id: string;
+  values: Vector | Float32Array | Float64Array | number[];
+  namespace?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface VectorizeMatch {
+  id: string;
+  score: number;
+  values?: number[];
+  metadata?: Record<string, unknown>;
+  namespace?: string;
+}
+
+export interface VectorizeMatches {
+  matches: VectorizeMatch[];
+  count: number;
+}
+
+export interface VectorizeQueryOptions {
+  topK?: number;
+  namespace?: string;
+  returnValues?: boolean;
+  returnMetadata?: 'none' | 'indexed' | 'all';
+}
+
+export interface CloudflareVectorizeIndex {
+  insert(vectors: VectorizeVector[]): Promise<any>;
+  upsert(vectors: VectorizeVector[]): Promise<any>;
+  query(
+    vector: Vector | Float32Array | Float64Array | number[],
+    options?: VectorizeQueryOptions,
+  ): Promise<VectorizeMatches>;
+  getByIds(ids: string[]): Promise<VectorizeVector[]>;
+  deleteByIds(ids: string[]): Promise<any>;
+}
+
