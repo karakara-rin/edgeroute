@@ -75,6 +75,7 @@ describe('@edgeroute/ai LanguageModelV1 Adapter', () => {
     const model = edgeroute({
       defaultModel: 'gpt-4o-mini',
       routes: [],
+      embedding: { provider: 'hash' },
       models: { 'gpt-4o-mini': gptMini },
     });
 
@@ -87,6 +88,7 @@ describe('@edgeroute/ai LanguageModelV1 Adapter', () => {
     const onRouteMatched = vi.fn();
     const router = edgeroute({
       defaultModel: 'gpt-4o-mini',
+      embedding: { provider: 'hash' },
       routes: [
         {
           name: 'complex-code',
@@ -156,6 +158,7 @@ describe('@edgeroute/ai LanguageModelV1 Adapter', () => {
   it('should work seamlessly with AI SDK generateText', async () => {
     const router = edgeroute({
       defaultModel: 'gpt-4o-mini',
+      embedding: { provider: 'hash' },
       routes: [
         {
           name: 'code-help',
@@ -182,6 +185,7 @@ describe('@edgeroute/ai LanguageModelV1 Adapter', () => {
   it('should stream text and emit metadata via doStream and AI SDK streamText', async () => {
     const router = edgeroute({
       defaultModel: 'gpt-4o-mini',
+      embedding: { provider: 'hash' },
       routes: [
         {
           name: 'deep-thinking',
@@ -218,6 +222,7 @@ describe('@edgeroute/ai LanguageModelV1 Adapter', () => {
   it('should support semantic cache hit on repeated doGenerate and doStream', async () => {
     const router = edgeroute({
       defaultModel: 'gpt-4o-mini',
+      embedding: { provider: 'hash' },
       routes: [],
       cache: {
         enabled: true,
@@ -275,6 +280,7 @@ describe('@edgeroute/ai LanguageModelV1 Adapter', () => {
   it('should route via semantic vector similarity when fast-path rules do not match', async () => {
     const router = edgeroute({
       defaultModel: 'gpt-4o-mini',
+      embedding: { provider: 'hash' },
       routes: [
         {
           name: 'distributed-systems',
@@ -307,6 +313,7 @@ describe('@edgeroute/ai LanguageModelV1 Adapter', () => {
   it('should throw clear error when target model is not provided in models dictionary', async () => {
     const router = edgeroute({
       defaultModel: 'unregistered-model',
+      embedding: { provider: 'hash' },
       routes: [],
       models: {},
     });
@@ -338,6 +345,7 @@ describe('@edgeroute/ai LanguageModelV1 Adapter', () => {
 
     const router = edgeroute({
       defaultModel: 'gpt-4o-mini',
+      embedding: { provider: 'hash' },
       maxRetries: 1,
       routes: [
         {
@@ -386,6 +394,7 @@ describe('@edgeroute/ai LanguageModelV1 Adapter', () => {
 
     const router = edgeroute({
       defaultModel: 'json-model',
+      embedding: { provider: 'hash' },
       routes: [],
       models: {
         'json-model': jsonModel,
@@ -416,6 +425,7 @@ describe('@edgeroute/ai LanguageModelV1 Adapter', () => {
   it('should support createEdgeRoute factory helper', () => {
     const provider = createEdgeRoute({
       defaultModel: 'gpt-4o-mini',
+      embedding: { provider: 'hash' },
       routes: [],
       models: {
         'gpt-4o-mini': gptMini,

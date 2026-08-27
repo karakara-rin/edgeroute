@@ -4,7 +4,7 @@ import {
   matchesFastPath,
   SemanticClassifier,
 } from '../src/classifier.js';
-import { LocalEmbeddingProvider } from '../src/embeddings/local.js';
+import { HashEmbeddingProvider } from '../src/embeddings/local.js';
 import type { EdgeRouteConfig } from '../src/types.js';
 
 describe('cosineSimilarity', () => {
@@ -81,7 +81,7 @@ describe('SemanticClassifier', () => {
   let classifier: SemanticClassifier;
 
   beforeEach(async () => {
-    const localProvider = new LocalEmbeddingProvider();
+    const localProvider = new HashEmbeddingProvider();
     classifier = new SemanticClassifier(sampleConfig, localProvider);
     await classifier.initialize();
   });

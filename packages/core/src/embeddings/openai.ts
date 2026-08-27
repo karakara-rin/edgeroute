@@ -7,6 +7,7 @@ export interface OpenAIEmbeddingOptions {
 }
 
 export class OpenAIEmbeddingProvider implements EmbeddingProvider {
+  public readonly name = 'openai';
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly model: string;

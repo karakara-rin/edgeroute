@@ -52,6 +52,7 @@ export class InMemoryCacheStore implements CacheStore {
   public async findSimilar(
     vector: Vector,
     threshold: number,
+    embeddingProvider?: string,
   ): Promise<CacheSimilarityMatch | null> {
     const now = Date.now();
     let bestMatch: CacheSimilarityMatch | null = null;
@@ -64,6 +65,11 @@ export class InMemoryCacheStore implements CacheStore {
 
       if (this.isExpired(entry, now)) {
         expiredIds.push(id);
+        continue;
+      }
+
+      // Skip entries from a different embedding provider to prevent cross-model vector comparison
+      if (embeddingProvider && entry.embeddingProvider && entry.embeddingProvider !== embeddingProvider) {
         continue;
       }
 

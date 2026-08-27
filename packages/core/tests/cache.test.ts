@@ -3,7 +3,7 @@ import {
   InMemoryCacheStore,
   CloudflareKVCacheStore,
   SemanticCacheManager,
-  LocalEmbeddingProvider,
+  HashEmbeddingProvider,
   type CloudflareKVNamespace,
   type CacheEntry,
 } from '../src/index.js';
@@ -147,7 +147,7 @@ describe('CloudflareKVCacheStore', () => {
 });
 
 describe('SemanticCacheManager', () => {
-  const embeddingProvider = new LocalEmbeddingProvider(64);
+  const embeddingProvider = new HashEmbeddingProvider(64);
 
   it('should hit cache for semantically identical / highly similar prompts', async () => {
     const manager = new SemanticCacheManager(
@@ -213,6 +213,7 @@ describe('SemanticCacheManager', () => {
   it('should deduplicate concurrent in-flight save requests for the same prompt', async () => {
     let embedCallCount = 0;
     const trackingEmbeddingProvider = {
+      name: 'test-tracking',
       embed: vi.fn(async (text: string) => {
         embedCallCount++;
         // Simulate async embedding latency
@@ -281,3 +282,67 @@ describe('SemanticCacheManager', () => {
   });
 });
 
+describe('SemanticCacheManager - Provider Tagging', () => {
+  it('should tag cache entries with embedding provider name', async () => {
+    const provider = new HashEmbeddingProvider(64);
+    const manager = new SemanticCacheManager(
+      { enabled: true, threshold: 0.9, ttl: 3600 },
+      provider,
+    );
+
+    const entry = await manager.save({
+      prompt: 'test prompt',
+      response: { choices: [] },
+      model: 'gpt-4o',
+    });
+
+    expect(entry).not.toBeNull();
+    expect(entry!.embeddingProvider).toBe('hash');
+  });
+
+  it('should skip cache entries from a different embedding provider', async () => {
+    const store = new InMemoryCacheStore({ maxEntries: 100 });
+
+    // Save entry tagged with provider 'transformers'
+    const entry: CacheEntry = {
+      id: 'cross-provider-1',
+      prompt: 'Test prompt for cross-provider',
+      vector: [1, 0, 0, 0],
+      response: { choices: [] },
+      createdAt: Date.now(),
+      ttl: 3600,
+      embeddingProvider: 'transformers',
+    };
+    await store.set(entry);
+
+    // Search with a different provider name — should NOT match
+    const noMatch = await store.findSimilar([1, 0, 0, 0], 0.5, 'hash');
+    expect(noMatch).toBeNull();
+
+    // Search with matching provider name — should match
+    const match = await store.findSimilar([1, 0, 0, 0], 0.5, 'transformers');
+    expect(match).not.toBeNull();
+    expect(match?.entry.id).toBe('cross-provider-1');
+  });
+
+  it('should match entries with no provider tag (backward compatibility)', async () => {
+    const store = new InMemoryCacheStore({ maxEntries: 100 });
+
+    // Legacy entry without embeddingProvider tag
+    const entry: CacheEntry = {
+      id: 'legacy-1',
+      prompt: 'Legacy prompt',
+      vector: [1, 0, 0, 0],
+      response: { choices: [] },
+      createdAt: Date.now(),
+      ttl: 3600,
+      // No embeddingProvider field
+    };
+    await store.set(entry);
+
+    // Should still match even when searching with a provider name
+    const match = await store.findSimilar([1, 0, 0, 0], 0.5, 'hash');
+    expect(match).not.toBeNull();
+    expect(match?.entry.id).toBe('legacy-1');
+  });
+});

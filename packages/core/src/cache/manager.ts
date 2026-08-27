@@ -97,7 +97,7 @@ export class SemanticCacheManager {
     const queryVector = await this.embeddingProvider.embed(normalizedPrompt);
     const threshold = this.config.threshold ?? 0.95;
 
-    const match = await this.store.findSimilar(queryVector, threshold);
+    const match = await this.store.findSimilar(queryVector, threshold, this.embeddingProvider.name);
     const latencyMs = Number((performance.now() - start).toFixed(2));
 
     if (match) {
@@ -150,6 +150,7 @@ export class SemanticCacheManager {
           response: params.response,
           createdAt: Date.now(),
           ttl,
+          embeddingProvider: this.embeddingProvider.name,
           metadata: {
             model: params.model,
             usage: params.usage,

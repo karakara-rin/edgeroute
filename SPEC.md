@@ -50,12 +50,17 @@ flowchart TD
    - Exact prefix / keyword matching
    - Token / character length constraints (e.g., prompt < 50 chars $\rightarrow$ lightweight route)
 
-2. **Tier 2: Semantic-path (Pluggable Local or Cloud Vector Embeddings)**
-   - **Local / Zero-API Mode (Default / Edge-first)**: Runs embedded vectorizers (e.g., lightweight ONNX / Transformers.js `all-MiniLM-L6-v2` or fast BM25/TF-IDF token rankers) directly in the edge/Node.js runtime without external API calls or network latency ($0 cost, 100% offline).
-   - **Cloud API Mode**: Pluggable provider for OpenAI (`text-embedding-3-small`), Cohere, or Cloudflare Workers AI.
+2. **Tier 2: Semantic-path (Pluggable Embedding Providers with Runtime Auto-Detection)**
+   - **`'auto'` mode (Default)**: Automatically selects the best available embedding provider for the current runtime:
+     - **Cloudflare Workers** → `WorkersAIEmbeddingProvider` using `@cf/baai/bge-small-en-v1.5` (384-dim, true semantic, $0 via Workers AI binding)
+     - **Node.js / Bun** → `TransformersEmbeddingProvider` using `all-MiniLM-L6-v2` ONNX (384-dim, true semantic, $0, requires `@huggingface/transformers`)
+     - **Fallback** → `HashEmbeddingProvider` — lexical/keyword n-gram hashing (256-dim, **NOT semantic**, zero dependencies). A console warning is emitted.
+   - **Cloud API Mode**: Pluggable provider for OpenAI (`text-embedding-3-small`), Cohere, or custom endpoints.
    - At server initialization / build time: Route `examples` are converted to embedding vectors and cached in-memory.
    - At runtime: Compute the embedding of the incoming prompt, then execute in-memory cosine similarity against cached vectors:
      $$\text{similarity}(\mathbf{u}, \mathbf{v}) = \frac{\mathbf{u} \cdot \mathbf{v}}{\|\mathbf{u}\| \|\mathbf{v}\|}$$
+   - If $\max(\text{similarity}) \ge \text{route.threshold}$, route to `route.targetModel`.
+   - **Cache Safety**: Cache entries are tagged with the embedding provider name. Vectors from different providers are never compared, preventing false cache hits when switching between runtimes or providers.
    - If $\max(\text{similarity}) \ge \text{route.threshold}$, route to `route.targetModel`.
 
 3. **Tier 3: Fallback & Resilience**
@@ -125,10 +130,11 @@ export default defineConfig({
     },
   },
 
-  // Embedding engine: Choose between 'local' (zero API / zero cost) or 'openai'
+  // Embedding engine: 'auto' (runtime auto-detect) | 'transformers' | 'workers-ai' | 'openai' | 'hash'
   embedding: {
-    provider: 'local', // 'local' | 'openai' | 'cloudflare-workers-ai'
-    // model: 'all-MiniLM-L6-v2', // for local ONNX/Transformers.js
+    provider: 'auto', // 'auto' | 'hash' | 'transformers' | 'workers-ai' | 'openai'
+    // model: 'Xenova/all-MiniLM-L6-v2', // for Transformers.js ONNX
+    // model: '@cf/baai/bge-small-en-v1.5', // for Cloudflare Workers AI
     // or provider: 'openai', model: 'text-embedding-3-small'
   },
 

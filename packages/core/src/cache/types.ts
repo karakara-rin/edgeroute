@@ -23,6 +23,8 @@ export interface CacheEntry {
   createdAt: number;
   /** Time-to-live in seconds */
   ttl: number;
+  /** Embedding provider that generated the vector (e.g. 'hash', 'transformers', 'workers-ai', 'openai') */
+  embeddingProvider?: string;
   /** Optional metadata attached to entry */
   metadata?: CacheEntryMetadata;
 }
@@ -37,8 +39,8 @@ export interface CacheStore {
   get(id: string): Promise<CacheEntry | null>;
   /** Save or update a cache entry */
   set(entry: CacheEntry): Promise<void>;
-  /** Find the best matching cache entry with cosine similarity >= threshold */
-  findSimilar(vector: Vector, threshold: number): Promise<CacheSimilarityMatch | null>;
+  /** Find the best matching cache entry with cosine similarity >= threshold, optionally filtering by embedding provider */
+  findSimilar(vector: Vector, threshold: number, embeddingProvider?: string): Promise<CacheSimilarityMatch | null>;
   /** Delete a cache entry by ID */
   delete?(id: string): Promise<void>;
   /** Clear all entries in the store */
