@@ -24,6 +24,9 @@ interface IndexRecord {
 /**
  * Cloudflare Workers KV CacheStore adapter.
  * Stores full response payloads under individual KV keys and maintains a synchronized index for semantic vector search.
+ *
+ * @warning For high-concurrency or production use cases, prefer `cloudflareVectorize(...)` with Cloudflare Vectorize
+ * to avoid race conditions on the single JSON index and to support large-scale approximate nearest neighbor search.
  */
 export class CloudflareKVCacheStore implements CacheStore {
   private readonly kv: CloudflareKVNamespace;
