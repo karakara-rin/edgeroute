@@ -25,7 +25,7 @@ Most LLM routers are Python-heavy, slow to boot, and impossible to deploy direct
   - **Tier 2 (Semantic-path)**: In-memory cosine similarity against pre-embedded route vectors (**< 0.5ms**).
 - 🚀 **Sub-Millisecond Semantic Cache ($0 Cost Immediate Hits)**: In-memory & Cloudflare KV caching layer that serves semantically equivalent past prompts (cosine similarity > threshold) with **< 1ms latency**, $0 API cost, and OpenAI-compatible SSE streaming support.
 - 🌐 **Multi-Provider Support**: Seamlessly route between **Anthropic** (`claude-*`), **Google Gemini** (`gemini-*`), **Groq** (`llama-*`, `mixtral-*`, `deepseek-*`), and **OpenAI** (`gpt-*`, `o1`, `o3-mini`) using standard OpenAI client SDKs.
-- 🆓 **Zero-API / $0 Embedding Engine**: Built-in local hashing vectorizer. No external embedding API calls or API key required.
+- 🧠 **True Semantic Embedding (Auto-Detected)**: Runtime auto-detection selects the best embedding provider — **Transformers.js** (ONNX `all-MiniLM-L6-v2`) for Node.js/Bun, **Cloudflare Workers AI** (`bge-small-en-v1.5`) for edge — with a zero-dependency lexical hash fallback.
 - 🔄 **Drop-in OpenAI Compatibility**: Works instantly with OpenAI SDK, Vercel AI SDK, LangChain, and LlamaIndex simply by pointing `baseURL` to `http://localhost:3000/v1`.
 - 🛡️ **Cross-Provider Automatic Failover**: Automatic retry against `defaultModel` (even across different AI providers) on downstream `429` (Rate Limit) or `5xx` server errors.
 - 📊 **Real-time Cost Diagnostics**: Injects `X-EdgeRoute-Cache`, `X-EdgeRoute-Cost-Saved-USD`, `X-EdgeRoute-Provider`, and `X-EdgeRoute-Matched-Route` headers into responses.
@@ -98,9 +98,13 @@ export default defineConfig({
     groq: { apiKey: process.env.GROQ_API_KEY },
   },
 
-  // Zero-cost in-memory local vectorizer
+  // Embedding provider: 'auto' (default) auto-detects the best provider for your runtime
+  //   - Cloudflare Workers → Workers AI (bge-small-en-v1.5, true semantic, $0)
+  //   - Node.js / Bun → Transformers.js (all-MiniLM-L6-v2, true semantic, $0)
+  //   - Fallback → Hash-based lexical matching (zero dependencies, NOT semantic)
+  // Other options: 'transformers', 'workers-ai', 'openai', 'hash'
   embedding: {
-    provider: 'local',
+    provider: 'auto',
   },
 
   // Sub-millisecond Semantic Cache configuration

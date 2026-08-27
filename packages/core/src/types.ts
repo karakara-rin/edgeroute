@@ -59,14 +59,16 @@ export type RouteDefinition = z.infer<typeof RouteDefinitionSchema>;
 export type RouteDefinitionInput = z.input<typeof RouteDefinitionSchema>;
 
 export const EmbeddingConfigSchema = z.object({
-  /** Embedding engine: 'local' (zero API/cost) or 'openai' */
-  provider: z.enum(['local', 'openai']).optional().default('local'),
-  /** Model name, e.g. 'text-embedding-3-small' or local model ID */
+  /** Embedding engine: 'auto' (runtime auto-detect), 'hash' (lexical/keyword), 'transformers' (ONNX), 'workers-ai' (CF), 'openai', or 'local' (deprecated alias for 'hash') */
+  provider: z.enum(['auto', 'hash', 'local', 'transformers', 'workers-ai', 'openai']).optional().default('auto'),
+  /** Model name, e.g. 'text-embedding-3-small', 'Xenova/all-MiniLM-L6-v2', '@cf/baai/bge-small-en-v1.5' */
   model: z.string().optional(),
   /** API key if using cloud provider */
   apiKey: z.string().optional(),
   /** Base URL if using custom proxy */
   baseUrl: z.string().optional(),
+  /** Cloudflare Workers AI binding (pass `env.AI` from Workers runtime) */
+  workersAiBinding: z.any().optional(),
 });
 
 export type EmbeddingConfig = z.infer<typeof EmbeddingConfigSchema>;
@@ -116,7 +118,7 @@ export const EdgeRouteConfigSchema = z.object({
   /** Providers configuration for upstream dispatch */
   providers: z.record(ProviderConfigSchema).optional(),
   /** Embedding provider configuration */
-  embedding: EmbeddingConfigSchema.optional().default({ provider: 'local' }),
+  embedding: EmbeddingConfigSchema.optional().default({ provider: 'auto' }),
   /** Semantic cache configuration */
   cache: CacheConfigSchema.optional(),
   /** Fallback retry count on downstream 429/5xx error */

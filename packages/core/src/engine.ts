@@ -33,53 +33,94 @@ export interface EdgeRouteEngineOptions {
  */
 export class EdgeRouteEngine {
   readonly config: EdgeRouteConfig;
-  readonly embeddingProvider: EmbeddingProvider;
-  readonly classifier: SemanticClassifier;
-  readonly cacheManager: SemanticCacheManager | null = null;
+  embeddingProvider!: EmbeddingProvider;
+  classifier!: SemanticClassifier;
+  cacheManager: SemanticCacheManager | null = null;
   private initialized = false;
   private initPromise: Promise<void> | null = null;
+
+  /**
+   * Deferred provider/classifier setup when createEmbeddingProvider returns a Promise (e.g. 'auto' mode).
+   * Null when provider was resolved synchronously in the constructor.
+   */
+  private deferredProviderSetup: (() => Promise<void>) | null = null;
 
   constructor(options: EdgeRouteEngineOptions | EdgeRouteConfig) {
     if ('routes' in options && 'defaultModel' in options) {
       // Direct EdgeRouteConfig passed
       this.config = options as EdgeRouteConfig;
-      this.embeddingProvider = createEmbeddingProvider(this.config);
-      this.classifier = new SemanticClassifier(
-        this.config,
-        this.embeddingProvider,
-      );
-      if (this.config.cache?.enabled !== false && this.config.cache) {
-        this.cacheManager = createSemanticCacheManager(
-          this.config,
-          this.embeddingProvider,
-        );
+      const providerOrPromise = createEmbeddingProvider(this.config);
+
+      if (providerOrPromise instanceof Promise) {
+        // Async provider — defer setup to initialize()
+        this.deferredProviderSetup = async () => {
+          this.embeddingProvider = await providerOrPromise;
+          this.classifier = new SemanticClassifier(this.config, this.embeddingProvider);
+          if (this.config.cache?.enabled !== false && this.config.cache) {
+            this.cacheManager = createSemanticCacheManager(this.config, this.embeddingProvider);
+          }
+        };
+      } else {
+        this.embeddingProvider = providerOrPromise;
+        this.classifier = new SemanticClassifier(this.config, this.embeddingProvider);
+        if (this.config.cache?.enabled !== false && this.config.cache) {
+          this.cacheManager = createSemanticCacheManager(this.config, this.embeddingProvider);
+        }
       }
     } else {
       const opts = options as EdgeRouteEngineOptions;
       this.config = opts.config;
-      this.embeddingProvider =
-        opts.embeddingProvider ?? createEmbeddingProvider(this.config);
-      this.classifier =
-        opts.classifier ??
-        new SemanticClassifier(this.config, this.embeddingProvider);
-      if (opts.cacheManager !== undefined) {
-        this.cacheManager = opts.cacheManager;
-      } else if (this.config.cache?.enabled !== false && this.config.cache) {
-        this.cacheManager = createSemanticCacheManager(
-          this.config,
-          this.embeddingProvider,
-        );
+
+      if (opts.embeddingProvider) {
+        this.embeddingProvider = opts.embeddingProvider;
+        this.classifier =
+          opts.classifier ?? new SemanticClassifier(this.config, this.embeddingProvider);
+        if (opts.cacheManager !== undefined) {
+          this.cacheManager = opts.cacheManager;
+        } else if (this.config.cache?.enabled !== false && this.config.cache) {
+          this.cacheManager = createSemanticCacheManager(this.config, this.embeddingProvider);
+        }
+      } else {
+        const providerOrPromise = createEmbeddingProvider(this.config);
+
+        if (providerOrPromise instanceof Promise) {
+          this.deferredProviderSetup = async () => {
+            this.embeddingProvider = await providerOrPromise;
+            this.classifier =
+              opts.classifier ?? new SemanticClassifier(this.config, this.embeddingProvider);
+            if (opts.cacheManager !== undefined) {
+              this.cacheManager = opts.cacheManager;
+            } else if (this.config.cache?.enabled !== false && this.config.cache) {
+              this.cacheManager = createSemanticCacheManager(this.config, this.embeddingProvider);
+            }
+          };
+        } else {
+          this.embeddingProvider = providerOrPromise;
+          this.classifier =
+            opts.classifier ?? new SemanticClassifier(this.config, this.embeddingProvider);
+          if (opts.cacheManager !== undefined) {
+            this.cacheManager = opts.cacheManager;
+          } else if (this.config.cache?.enabled !== false && this.config.cache) {
+            this.cacheManager = createSemanticCacheManager(this.config, this.embeddingProvider);
+          }
+        }
       }
     }
   }
 
   /**
    * Initializes semantic vectors for route examples.
+   * Also resolves the embedding provider if it was deferred (async auto-detection).
    */
   async initialize(): Promise<void> {
     if (this.initialized) return;
     if (!this.initPromise) {
       this.initPromise = (async () => {
+        // Resolve deferred async provider setup (e.g. 'auto' mode runtime detection)
+        if (this.deferredProviderSetup) {
+          await this.deferredProviderSetup();
+          this.deferredProviderSetup = null;
+        }
         await this.classifier.initialize();
         this.initialized = true;
       })();

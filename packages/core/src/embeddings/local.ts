@@ -1,10 +1,19 @@
 import type { EmbeddingProvider, Vector } from './types.js';
 
 /**
- * Ultra-fast, zero-dependency, zero-API hashing vectorizer for Edge runtimes.
- * Converts text into normalized sparse-dense feature vectors using character and word n-grams with Murmur-inspired hashing.
+ * Ultra-fast, zero-dependency, zero-API lexical hashing vectorizer for Edge runtimes.
+ *
+ * ⚠️ This is NOT a semantic embedding provider. It uses character and word n-gram
+ * hashing (FNV-1a Feature Hashing Trick) to produce sparse-dense feature vectors.
+ * It cannot capture synonyms, paraphrases, or semantic similarity between texts
+ * with different surface forms.
+ *
+ * Use `TransformersEmbeddingProvider` or `WorkersAIEmbeddingProvider` for true
+ * semantic understanding. This provider serves as a zero-cost lexical fallback
+ * when no ML runtime is available.
  */
-export class LocalEmbeddingProvider implements EmbeddingProvider {
+export class HashEmbeddingProvider implements EmbeddingProvider {
+  public readonly name = 'hash';
   private readonly dimensions: number;
 
   constructor(dimensions = 256) {
@@ -79,3 +88,9 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
     return hash;
   }
 }
+
+/**
+ * @deprecated Use `HashEmbeddingProvider` instead. This alias exists for backward compatibility.
+ * The "Local" name was misleading as it implied semantic understanding.
+ */
+export const LocalEmbeddingProvider = HashEmbeddingProvider;
