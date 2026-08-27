@@ -2,9 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type {
   LanguageModelV1,
   LanguageModelV1CallOptions,
-  LanguageModelV1GenerateResult,
   LanguageModelV1StreamPart,
-  LanguageModelV1StreamResult,
 } from '@ai-sdk/provider';
 import { generateText, streamText } from 'ai';
 import { edgeroute, createEdgeRoute, EdgeRouteLanguageModel } from '../src/index.js';
@@ -17,7 +15,7 @@ function createMockModel(modelId: string, responseText = `Response from ${modelI
     defaultObjectGenerationMode: 'tool',
     supportsImageUrls: true,
     supportsStructuredOutputs: true,
-    async doGenerate(options: LanguageModelV1CallOptions): Promise<LanguageModelV1GenerateResult> {
+    async doGenerate(options: LanguageModelV1CallOptions): Promise<Awaited<ReturnType<LanguageModelV1['doGenerate']>>> {
       return {
         text: `${responseText}: ${typeof options.prompt === 'string' ? options.prompt : JSON.stringify(options.prompt)}`,
         finishReason: 'stop',
@@ -26,22 +24,23 @@ function createMockModel(modelId: string, responseText = `Response from ${modelI
           completionTokens: 20,
         },
         rawCall: { rawPrompt: options.prompt, rawSettings: {} },
+        rawResponse: {
+          headers: { 'x-upstream-provider': 'mock' },
+        },
         response: {
           id: `gen-${Date.now()}`,
           timestamp: new Date(),
           modelId,
-          headers: { 'x-upstream-provider': 'mock' },
         },
       };
     },
-    async doStream(options: LanguageModelV1CallOptions): Promise<LanguageModelV1StreamResult> {
+    async doStream(options: LanguageModelV1CallOptions): Promise<Awaited<ReturnType<LanguageModelV1['doStream']>>> {
       const stream = new ReadableStream<LanguageModelV1StreamPart>({
         start(controller) {
           controller.enqueue({
             type: 'response-metadata',
             id: `stream-${Date.now()}`,
             modelId,
-            headers: { 'x-upstream-stream': 'mock' },
           });
           controller.enqueue({
             type: 'text-delta',
@@ -62,6 +61,9 @@ function createMockModel(modelId: string, responseText = `Response from ${modelI
       return {
         stream,
         rawCall: { rawPrompt: options.prompt, rawSettings: {} },
+        rawResponse: {
+          headers: { 'x-upstream-stream': 'mock' },
+        },
       };
     },
   };
