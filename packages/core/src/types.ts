@@ -231,6 +231,22 @@ export interface ModelPricing {
 
 export type CacheStatus = 'HIT' | 'MISS' | 'BYPASS' | 'SKIPPED';
 
+export interface TokenUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
+
+/**
+ * Evaluates whether an HTTP status or response state warrants fallback retry
+ * (e.g. rate limit 429 or downstream server errors 5xx).
+ */
+export function isRetryableStatus(status?: number, ok?: boolean): boolean {
+  if (ok === false && status === undefined) return true;
+  if (!status) return false;
+  return status === 429 || status >= 500;
+}
+
 export interface RouteEngineRequest {
   prompt: string;
   temperature?: number;
@@ -242,28 +258,24 @@ export interface RouteEngineRequest {
   stream?: boolean;
 }
 
-export interface RouteCallerResult<T = any> {
+export interface RouteCallerResult<T = unknown> {
   response: T;
   ok?: boolean;
   status?: number;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    total_tokens?: number;
-  };
+  usage?: TokenUsage;
   headers?: Record<string, string> | Headers;
   actualModel?: string;
   actualProvider?: ProviderType;
 }
 
-export type RouteCaller<T = any> = (
+export type RouteCaller<T = unknown> = (
   model: string,
   explicitProvider?: ProviderType,
 ) => Promise<RouteCallerResult<T>>;
 
-export interface RouteEngineExecutionResult<T = any> {
+export interface RouteEngineExecutionResult<T = unknown> {
   fromCache: boolean;
-  cachedResponse?: any;
+  cachedResponse?: Record<string, unknown> | string;
   cacheStatus: CacheStatus;
   cacheScore?: number;
   cacheLatencyMs?: number;
@@ -274,11 +286,7 @@ export interface RouteEngineExecutionResult<T = any> {
   response?: T;
   ok?: boolean;
   status?: number;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    total_tokens?: number;
-  };
+  usage?: TokenUsage;
   costSavings?: CostSavingsComparison;
   savedCostUSD?: number;
   headers: Record<string, string>;

@@ -1,4 +1,8 @@
-import type { EdgeRouteConfig, ProviderType } from '@edgeroute/core';
+import {
+  type EdgeRouteConfig,
+  type ProviderType,
+  isRetryableStatus,
+} from '@edgeroute/core';
 import { dispatchProviderRequest } from './providers/index.js';
 
 export interface UpstreamRequestOptions {
@@ -82,8 +86,7 @@ export async function forwardChatCompletion(
   const maxRetries = config.maxRetries ?? 1;
 
   if (
-    !response.ok &&
-    (response.status === 429 || response.status >= 500) &&
+    isRetryableStatus(response.status, response.ok) &&
     model !== config.defaultModel &&
     maxRetries > 0
   ) {
@@ -98,7 +101,7 @@ export async function forwardChatCompletion(
         config,
       });
 
-      if (fallbackResult.response.ok) {
+      if (!isRetryableStatus(fallbackResult.response.status, fallbackResult.response.ok)) {
         response = fallbackResult.response;
         retriedWithFallback = true;
         finalModel = config.defaultModel;

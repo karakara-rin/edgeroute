@@ -7,12 +7,15 @@ import {
 import { ServerLogger, type ServerLoggerOptions } from './logger.js';
 import { createRouterRoutes } from './routes.js';
 
+export * from './types.js';
 export * from './logger.js';
 export * from './proxy.js';
 export * from './routes.js';
 export * from './streaming.js';
 export * from './providers/index.js';
 export * from './middleware/index.js';
+export * from './handlers/index.js';
+export * from './utils/prompt.js';
 
 export interface CreateEdgeRouteServerOptions {
   logger?: ServerLogger | ServerLoggerOptions;
@@ -47,5 +50,3 @@ export async function createEdgeRouteServer(
     embeddingProvider: engine.embeddingProvider,
   };
 }
-
-
