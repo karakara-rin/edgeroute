@@ -1,25 +1,38 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createEdgeRouteServer } from '../src/index.js';
 
 describe('Proxy Rate Limiting Middleware', () => {
+  let originalFetch: typeof globalThis.fetch;
+
   beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
   });
 
   it('limits requests according to maxRequests and windowMs', async () => {
-    global.fetch = vi.fn().mockResolvedValue(
-      new Response(
+    globalThis.fetch = vi.fn().mockImplementation(async (url, init) => {
+      const urlStr = String(url);
+      if (urlStr.includes('huggingface.co') || urlStr.includes('.onnx')) {
+        return originalFetch(url, init);
+      }
+      return new Response(
         JSON.stringify({
           id: 'chatcmpl-test',
           choices: [{ message: { role: 'assistant', content: 'OK' } }],
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
-    );
+      );
+    });
 
     const { app } = await createEdgeRouteServer({
       defaultModel: 'gpt-4o',
       routes: [],
+      embedding: { provider: 'hash' },
       rateLimit: {
         maxRequests: 2,
         windowMs: 60000,

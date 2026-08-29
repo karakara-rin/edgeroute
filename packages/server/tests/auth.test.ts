@@ -1,8 +1,16 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createEdgeRouteServer } from '../src/index.js';
 
 describe('Proxy Authentication & Upstream Credential Isolation', () => {
+  let originalFetch: typeof globalThis.fetch;
+
   beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
   });
 
@@ -10,6 +18,7 @@ describe('Proxy Authentication & Upstream Credential Isolation', () => {
     const { app } = await createEdgeRouteServer({
       defaultModel: 'gpt-4o',
       routes: [],
+      embedding: { provider: 'hash' },
       auth: {
         apiKeys: ['er-secret-key-123'],
       },
@@ -25,6 +34,7 @@ describe('Proxy Authentication & Upstream Credential Isolation', () => {
     const { app } = await createEdgeRouteServer({
       defaultModel: 'gpt-4o',
       routes: [],
+      embedding: { provider: 'hash' },
       auth: {
         apiKeys: ['er-secret-key-123'],
       },
@@ -49,6 +59,7 @@ describe('Proxy Authentication & Upstream Credential Isolation', () => {
     const { app } = await createEdgeRouteServer({
       defaultModel: 'gpt-4o',
       routes: [],
+      embedding: { provider: 'hash' },
       auth: {
         apiKeys: ['er-secret-key-123'],
       },
@@ -72,19 +83,24 @@ describe('Proxy Authentication & Upstream Credential Isolation', () => {
 
   it('accepts valid API key via Authorization: Bearer or x-api-key', async () => {
     // Mock global fetch to return OpenAI mock response
-    global.fetch = vi.fn().mockResolvedValue(
-      new Response(
+    globalThis.fetch = vi.fn().mockImplementation(async (url, init) => {
+      const urlStr = String(url);
+      if (urlStr.includes('huggingface.co') || urlStr.includes('.onnx')) {
+        return originalFetch(url, init);
+      }
+      return new Response(
         JSON.stringify({
           id: 'chatcmpl-test',
           choices: [{ message: { role: 'assistant', content: 'Hello world' } }],
         }),
         { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
-    );
+      );
+    });
 
     const { app } = await createEdgeRouteServer({
       defaultModel: 'gpt-4o',
       routes: [],
+      embedding: { provider: 'hash' },
       auth: {
         apiKeys: ['er-secret-key-123'],
       },
@@ -115,6 +131,7 @@ describe('Proxy Authentication & Upstream Credential Isolation', () => {
     const { app } = await createEdgeRouteServer({
       defaultModel: 'gpt-4o',
       routes: [],
+      embedding: { provider: 'hash' },
       auth: {
         validator,
       },
@@ -139,22 +156,25 @@ describe('Proxy Authentication & Upstream Credential Isolation', () => {
   it('prevents leaking proxy API keys to upstream providers and uses BYOK correctly', async () => {
     let capturedUpstreamHeaders: Record<string, string> = {};
 
-    global.fetch = vi.fn().mockImplementation((url, init) => {
+    globalThis.fetch = vi.fn().mockImplementation(async (url, init) => {
+      const urlStr = String(url);
+      if (urlStr.includes('huggingface.co') || urlStr.includes('.onnx')) {
+        return originalFetch(url, init);
+      }
       capturedUpstreamHeaders = (init?.headers as Record<string, string>) || {};
-      return Promise.resolve(
-        new Response(
-          JSON.stringify({
-            id: 'chatcmpl-test',
-            choices: [{ message: { role: 'assistant', content: 'Safe response' } }],
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
-        ),
+      return new Response(
+        JSON.stringify({
+          id: 'chatcmpl-test',
+          choices: [{ message: { role: 'assistant', content: 'Safe response' } }],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
       );
     });
 
     const { app } = await createEdgeRouteServer({
       defaultModel: 'gpt-4o',
       routes: [],
+      embedding: { provider: 'hash' },
       auth: {
         apiKeys: ['er-proxy-admin-key'],
       },

@@ -6,6 +6,7 @@ describe('Security & Protection Middleware', () => {
     const { app } = await createEdgeRouteServer({
       defaultModel: 'gpt-4o',
       routes: [],
+      embedding: { provider: 'hash' },
       security: {
         cors: true,
       },
@@ -27,6 +28,7 @@ describe('Security & Protection Middleware', () => {
     const { app } = await createEdgeRouteServer({
       defaultModel: 'gpt-4o',
       routes: [],
+      embedding: { provider: 'hash' },
       security: {
         maxBodySize: 100, // 100 bytes max
       },
