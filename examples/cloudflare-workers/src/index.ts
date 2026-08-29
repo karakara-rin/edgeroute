@@ -8,6 +8,7 @@ import {
 import { createEdgeRouteServer } from '@edgeroute/server';
 
 export interface Env {
+  AI?: any;
   CACHE_KV?: KVNamespace;
   OPENAI_API_KEY?: string;
   ANTHROPIC_API_KEY?: string;
@@ -27,6 +28,8 @@ app.get('/health', (c) =>
     status: 'ok',
     runtime: 'cloudflare-workers',
     edgeNative: true,
+    workersAi: Boolean(c.env.AI),
+    kvCache: Boolean(c.env.CACHE_KV),
   }),
 );
 
@@ -40,6 +43,16 @@ app.all('/v1/*', async (c) => {
     // Dynamic Complexity Routing strategy (rules -> semantic -> complexity threshold -> fallback)
     routingStrategy: 'hybrid',
     complexityThreshold: 0.55,
+    // $0 Workers AI Neural Embedding Provider (@cf/baai/bge-small-en-v1.5)
+    embedding: env.AI
+      ? {
+          provider: 'workers-ai',
+          model: '@cf/baai/bge-small-en-v1.5',
+          workersAiBinding: env.AI,
+        }
+      : {
+          provider: 'auto',
+        },
     routes: [
       {
         name: 'lightweight-fast',

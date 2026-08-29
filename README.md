@@ -75,13 +75,64 @@ flowchart TD
 
 ## 🚀 Quickstart
 
-### 1. Installation
+Choose your deployment mode below:
+
+### 🌟 Option A: Cloudflare Workers ($0/mo Edge Deployment)
+
+Run a production LLM proxy worldwide at **$0 infrastructure cost** with Cloudflare Workers (100k req/day free), Workers AI ($0 free neural embeddings), and Cloudflare KV (sub-millisecond distributed cache).
+
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/karakara-rin/edgeroute/tree/main/examples/cloudflare-workers)
+
+```bash
+# 1. Clone the ready-to-deploy Cloudflare Worker example
+git clone https://github.com/karakara-rin/edgeroute.git
+cd edgeroute/examples/cloudflare-workers && npm install
+
+# 2. Create your free KV Cache namespace
+npx wrangler kv namespace create CACHE_KV
+# (Paste the generated id into wrangler.jsonc)
+
+# 3. Configure your API key secrets & deploy in 1 click
+npx wrangler secret put OPENAI_API_KEY
+npm run deploy
+```
+
+---
+
+### 🐳 Option B: Docker & docker-compose (Self-Hosted)
+
+Run EdgeRoute with Docker anywhere (VPS, Fly.io, Render, AWS, GCP, or local machine) with zero installation:
+
+```bash
+# 1. Copy environment template
+cp .env.example .env
+# Edit .env with your OPENAI_API_KEY / ANTHROPIC_API_KEY
+
+# 2. Launch with docker-compose
+docker-compose up -d
+
+# 3. EdgeRoute is ready at http://localhost:3000
+curl http://localhost:3000/health
+```
+
+Or run directly with Docker CLI:
+
+```bash
+docker build -t edgeroute .
+docker run -d -p 3000:3000 -e OPENAI_API_KEY="sk-..." edgeroute
+```
+
+---
+
+### 💻 Option C: Node.js / TypeScript Proxy Server
+
+#### 1. Installation
 
 ```bash
 npm install @edgeroute/core @edgeroute/server
 ```
 
-### 2. Configure Router (`router.config.ts`)
+#### 2. Configure Router (`router.config.ts`)
 
 ```typescript
 import { defineConfig } from '@edgeroute/core';
@@ -165,7 +216,7 @@ export default defineConfig({
 });
 ```
 
-### 3. Start the Proxy Server
+#### 3. Start the Proxy Server
 
 ```typescript
 import { createEdgeRouteServer } from '@edgeroute/server';
@@ -176,7 +227,7 @@ const { app } = await createEdgeRouteServer(config);
 export default app; // For Cloudflare Workers or Node.js Hono adapter
 ```
 
-### 4. Use with OpenAI SDK
+#### 4. Use with OpenAI SDK
 
 ```typescript
 import OpenAI from 'openai';
@@ -191,6 +242,7 @@ const response = await client.chat.completions.create({
   messages: [{ role: 'user', content: 'Hello! How are you?' }],
 });
 ```
+
 
 ---
 
