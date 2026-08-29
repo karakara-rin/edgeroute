@@ -246,14 +246,8 @@ export function captureAndCacheStream(
       const processLine = (line: string) => {
         const trimmed = line.trim();
         if (!trimmed || !trimmed.startsWith('data:')) return;
-        
-        // Strip single leading space after 'data:' if present without trimming trailing characters
-        const rawData = line.startsWith('data: ')
-          ? line.slice(6)
-          : line.startsWith('data:')
-            ? line.slice(5)
-            : '';
-        const dataStr = rawData.trim();
+
+        const dataStr = line.slice(5).trim();
         if (dataStr === '[DONE]' || !dataStr.startsWith('{')) return;
 
         try {

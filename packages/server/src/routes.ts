@@ -5,6 +5,7 @@ import {
   EdgeRouteEngine,
   SemanticClassifier,
   estimateMessagesTokens,
+  extractContentText,
 } from '@edgeroute/core';
 import { dispatchProviderRequest } from './providers/index.js';
 import {
@@ -94,21 +95,13 @@ export function extractUserPrompt(messages: ChatCompletionMessage[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i]!;
     if (msg.role === 'user') {
-      if (typeof msg.content === 'string') {
-        return msg.content;
-      }
-      if (Array.isArray(msg.content)) {
-        const textParts = msg.content
-          .filter((p) => p.type === 'text' && typeof p.text === 'string')
-          .map((p) => p.text);
-        return textParts.join('\n');
-      }
+      return extractContentText(msg.content);
     }
   }
 
-  // Fallback: stringify last message content
+  // Fallback: extract last message content
   const last = messages[messages.length - 1]!;
-  return typeof last.content === 'string' ? last.content : JSON.stringify(last.content);
+  return extractContentText(last.content) || (typeof last.content === 'string' ? last.content : JSON.stringify(last.content ?? ''));
 }
 
 /**
@@ -124,30 +117,16 @@ export function extractPromptContext(messages: ChatCompletionMessage[]): string 
 
   // Simple single user turn with no prior context or system prompt
   if (messages.length === 1 && (messages[0]?.role === 'user' || !messages[0]?.role)) {
-    const msg = messages[0]!;
-    if (typeof msg.content === 'string') return msg.content;
-    if (Array.isArray(msg.content)) {
-      const textParts = msg.content
-        .filter((p) => p && typeof p === 'object' && p.type === 'text' && typeof p.text === 'string')
-        .map((p) => p.text as string);
-      return textParts.join('\n');
-    }
+    return extractContentText(messages[0]?.content);
   }
 
   // Multi-turn or system-prompt enriched conversation: include roles and contents
   const parts: string[] = [];
   for (const msg of messages) {
     const role = msg.role || 'user';
-    let text = '';
-    if (typeof msg.content === 'string') {
-      text = msg.content;
-    } else if (Array.isArray(msg.content)) {
-      text = msg.content
-        .filter((p) => p && typeof p === 'object' && p.type === 'text' && typeof p.text === 'string')
-        .map((p) => p.text as string)
-        .join('\n');
-    } else if (msg.content) {
-      text = JSON.stringify(msg.content);
+    let text = extractContentText(msg.content);
+    if (!text && msg.content) {
+      text = typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content);
     }
 
     if (msg.tool_calls && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
@@ -160,11 +139,7 @@ export function extractPromptContext(messages: ChatCompletionMessage[]): string 
     }
   }
 
-  if (parts.length > 0) {
-    return parts.join('\n');
-  }
-
-  return extractUserPrompt(messages);
+  return parts.length > 0 ? parts.join('\n') : extractUserPrompt(messages);
 }
 
 export function createRouterRoutes(

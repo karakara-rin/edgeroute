@@ -6,6 +6,7 @@ import { GeminiAdapter } from './gemini.js';
 import { GroqAdapter } from './groq.js';
 
 export * from './types.js';
+export * from './openai-compatible.js';
 export * from './openai.js';
 export * from './anthropic.js';
 export * from './gemini.js';

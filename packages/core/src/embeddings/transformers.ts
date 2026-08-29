@@ -74,12 +74,7 @@ export class TransformersEmbeddingProvider implements EmbeddingProvider {
 
   public async embedBatch(texts: string[]): Promise<Vector[]> {
     if (texts.length === 0) return [];
-
-    // Process individually for now — Transformers.js batching support varies by model
-    const results: Vector[] = [];
-    for (const text of texts) {
-      results.push(await this.embed(text));
-    }
-    return results;
+    await this.ensureInitialized();
+    return Promise.all(texts.map((text) => this.embed(text)));
   }
 }

@@ -46,64 +46,35 @@ export class EdgeRouteEngine {
   private deferredProviderSetup: (() => Promise<void>) | null = null;
 
   constructor(options: EdgeRouteEngineOptions | EdgeRouteConfig) {
-    if ('routes' in options && 'defaultModel' in options) {
-      // Direct EdgeRouteConfig passed
-      this.config = options as EdgeRouteConfig;
-      const providerOrPromise = createEmbeddingProvider(this.config);
+    const opts: EdgeRouteEngineOptions =
+      'routes' in options && 'defaultModel' in options
+        ? { config: options as EdgeRouteConfig }
+        : (options as EdgeRouteEngineOptions);
 
+    this.config = opts.config;
+
+    const setupComponents = (provider: EmbeddingProvider) => {
+      this.embeddingProvider = provider;
+      this.classifier =
+        opts.classifier ?? new SemanticClassifier(this.config, this.embeddingProvider);
+      if (opts.cacheManager !== undefined) {
+        this.cacheManager = opts.cacheManager;
+      } else if (this.config.cache?.enabled !== false && this.config.cache) {
+        this.cacheManager = createSemanticCacheManager(this.config, this.embeddingProvider);
+      }
+    };
+
+    if (opts.embeddingProvider) {
+      setupComponents(opts.embeddingProvider);
+    } else {
+      const providerOrPromise = createEmbeddingProvider(this.config);
       if (providerOrPromise instanceof Promise) {
-        // Async provider — defer setup to initialize()
         this.deferredProviderSetup = async () => {
-          this.embeddingProvider = await providerOrPromise;
-          this.classifier = new SemanticClassifier(this.config, this.embeddingProvider);
-          if (this.config.cache?.enabled !== false && this.config.cache) {
-            this.cacheManager = createSemanticCacheManager(this.config, this.embeddingProvider);
-          }
+          const provider = await providerOrPromise;
+          setupComponents(provider);
         };
       } else {
-        this.embeddingProvider = providerOrPromise;
-        this.classifier = new SemanticClassifier(this.config, this.embeddingProvider);
-        if (this.config.cache?.enabled !== false && this.config.cache) {
-          this.cacheManager = createSemanticCacheManager(this.config, this.embeddingProvider);
-        }
-      }
-    } else {
-      const opts = options as EdgeRouteEngineOptions;
-      this.config = opts.config;
-
-      if (opts.embeddingProvider) {
-        this.embeddingProvider = opts.embeddingProvider;
-        this.classifier =
-          opts.classifier ?? new SemanticClassifier(this.config, this.embeddingProvider);
-        if (opts.cacheManager !== undefined) {
-          this.cacheManager = opts.cacheManager;
-        } else if (this.config.cache?.enabled !== false && this.config.cache) {
-          this.cacheManager = createSemanticCacheManager(this.config, this.embeddingProvider);
-        }
-      } else {
-        const providerOrPromise = createEmbeddingProvider(this.config);
-
-        if (providerOrPromise instanceof Promise) {
-          this.deferredProviderSetup = async () => {
-            this.embeddingProvider = await providerOrPromise;
-            this.classifier =
-              opts.classifier ?? new SemanticClassifier(this.config, this.embeddingProvider);
-            if (opts.cacheManager !== undefined) {
-              this.cacheManager = opts.cacheManager;
-            } else if (this.config.cache?.enabled !== false && this.config.cache) {
-              this.cacheManager = createSemanticCacheManager(this.config, this.embeddingProvider);
-            }
-          };
-        } else {
-          this.embeddingProvider = providerOrPromise;
-          this.classifier =
-            opts.classifier ?? new SemanticClassifier(this.config, this.embeddingProvider);
-          if (opts.cacheManager !== undefined) {
-            this.cacheManager = opts.cacheManager;
-          } else if (this.config.cache?.enabled !== false && this.config.cache) {
-            this.cacheManager = createSemanticCacheManager(this.config, this.embeddingProvider);
-          }
-        }
+        setupComponents(providerOrPromise);
       }
     }
   }
