@@ -220,16 +220,41 @@ EdgeRoute is a 100% transparent drop-in replacement for OpenAI's chat completion
 
 ---
 
-## 6. Evaluation & Simulation Engine (`@edgeroute/cli`)
+## 6. CLI Diagnostics & Evaluation Engine (`@edgeroute/cli`)
 
-The CLI allows running historical prompt datasets through the router under varying threshold values to calculate:
-- **Routing Distribution Ratio**: e.g., 68% Mini, 32% Large
-- **Estimated Cost Savings ($ / %)**: Cumulative savings compared to 100% large model usage
-- **Latency Distribution (p50 / p95 / p99)**
+The `@edgeroute/cli` package provides developer tooling to test, debug, simulate, and compile routing pipelines offline without spinning up a live HTTP server.
+
+### 6.1 Prompt Routing Debugger (`edgeroute test <prompt>`)
+Executes an offline decision pass for a single prompt:
+- Determines tier match (**Tier 1 Fast-path**, **Tier 2 Semantic/Complexity**, or **Tier 3 Default Fallback**).
+- Computes vector cosine similarity against route examples.
+- Estimates input/output token usage and calculates cost savings against `defaultModel`.
+- Options:
+  - `-c, --config <path>`: Path to router configuration.
+  - `-v, --verbose`: Displays all candidate route similarity scores and complexity feature metrics.
+  - `--json`: Machine-readable JSON output for CI pipelines.
 
 ```bash
-# Run evaluation simulation on past request logs
-pnpm edgeroute eval --dataset ./logs/production-prompts.jsonl --threshold-range 0.6:0.9:0.05
+edgeroute test "Fix syntax error in this SQL query" --verbose
+```
+
+### 6.2 Dataset Evaluation & Threshold Auto-Tuning (`edgeroute eval`)
+Replays historical prompt datasets (JSONL, JSON, or CSV) under varying threshold values:
+- **Routing Distribution Ratio**: e.g., 68% Target Model, 32% Default Model
+- **Estimated Cost Savings ($ / %)**: Cumulative savings compared to 100% large model usage
+- **Latency Distribution (Avg / p95 / Max)**
+- **Threshold Auto-Tuner (`--tune`)**: Sweeps threshold values to find the sweet spot balancing cost savings with $\ge 90\%$ routing accuracy.
+
+```bash
+# Replay past request logs with automatic threshold sweeping
+edgeroute eval --dataset ./logs/production-prompts.jsonl --tune --threshold-range 0.5:0.95:0.05
+```
+
+### 6.3 Offline Embedding Pre-Compiler (`edgeroute build-embeddings`)
+Pre-computes vector embeddings for all route examples and exports them as a static `.json` or `.ts` bundle, eliminating cold-start embedding latency on edge runtimes.
+
+```bash
+edgeroute build-embeddings --output router.embeddings.json
 ```
 
 ---

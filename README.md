@@ -246,6 +246,64 @@ export async function POST(req: Request) {
 
 ---
 
+## 🛠️ CLI & Diagnostic Tools (`@edgeroute/cli`)
+
+EdgeRoute includes a rich CLI for offline routing verification, threshold auto-tuning, and embedding pre-compilation without booting a live proxy server.
+
+```bash
+npm install -g @edgeroute/cli
+# or run via npx / pnpm
+npx edgeroute --help
+```
+
+### 1. Instant Prompt Routing Test (`edgeroute test`)
+
+Debug and verify routing tier decisions, similarity scores, selected target model, and cost savings in 1 second directly from your terminal:
+
+```bash
+# Basic test
+npx edgeroute test "Hello, what is the capital of France?"
+
+# Verbose mode (view candidate route scores, token estimation, and complexity analysis)
+npx edgeroute test "Write a distributed consensus engine in Rust" --verbose
+
+# JSON output for CI / test automation
+npx edgeroute test "Translate this to Japanese" --json
+```
+
+**Terminal Output Example:**
+```text
+⚡ Routing Decision for: "What is the capital of France?"
+──────────────────────────────────────────────────
+• Decision:   Tier 2 (Semantic Match)
+• Matched:    "general-knowledge" (Score: 0.892, Threshold: 0.80)
+• Target:     gpt-4o-mini (Provider: openai)
+• Cost Est.:  $0.00015 (Default: $0.00500 -> Saved 97.0%)
+• Latency:    0.34ms (Local vector math)
+```
+
+### 2. Dataset Simulation & Threshold Auto-Tuning (`edgeroute eval`)
+
+Replay historical request logs against your routing configuration to measure cumulative cost savings and find the optimal threshold:
+
+```bash
+# Evaluate baseline against a dataset
+npx edgeroute eval --dataset ./logs/prompts.jsonl
+
+# Auto-tune threshold range for optimal accuracy/cost balance
+npx edgeroute eval --dataset ./logs/prompts.jsonl --tune --threshold-range 0.5:0.95:0.05
+```
+
+### 3. Offline Vector Pre-Compiler (`edgeroute build-embeddings`)
+
+Pre-compile route example vectors offline to eliminate edge cold-start overhead:
+
+```bash
+npx edgeroute build-embeddings --output router.embeddings.json
+```
+
+---
+
 ## 📡 Diagnostic Response Headers
 
 EdgeRoute enriches every upstream response with transparent routing and caching metadata:

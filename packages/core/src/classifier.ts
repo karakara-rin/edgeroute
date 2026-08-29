@@ -4,6 +4,8 @@ import type {
   ClassificationResult,
   EdgeRouteConfig,
   FastPathRules,
+  PrecomputedEmbeddingEntry,
+  PrecomputedEmbeddings,
   RouteDefinition,
 } from './types.js';
 
@@ -199,12 +201,36 @@ export class SemanticClassifier {
 
   /**
    * Initializes and caches the embedding vectors for all route examples in memory.
+   * If precomputedEmbeddings are provided, vector calculation is completely skipped.
    */
-  public async initialize(): Promise<void> {
+  public async initialize(
+    precomputed?: PrecomputedEmbeddings | PrecomputedEmbeddingEntry[],
+  ): Promise<void> {
+    const rawPrecomputed = precomputed ?? this.config.precomputedEmbeddings;
+    const precomputedList: PrecomputedEmbeddingEntry[] = rawPrecomputed
+      ? Array.isArray(rawPrecomputed)
+        ? rawPrecomputed
+        : rawPrecomputed.embeddings ?? []
+      : [];
+
+    const precomputedMap = new Map<string, { text: string; vector: Vector }[]>();
+    for (const item of precomputedList) {
+      if (!precomputedMap.has(item.route)) {
+        precomputedMap.set(item.route, []);
+      }
+      precomputedMap.get(item.route)!.push({
+        text: item.text,
+        vector: item.vector,
+      });
+    }
+
     const cache: RouteVectorCache[] = [];
 
     for (const route of this.config.routes) {
-      if (route.examples && route.examples.length > 0) {
+      const preloaded = precomputedMap.get(route.name);
+      if (preloaded && preloaded.length > 0) {
+        cache.push({ route, exampleVectors: preloaded });
+      } else if (route.examples && route.examples.length > 0) {
         const vectors = await this.embeddingProvider.embedBatch(route.examples);
         const exampleVectors = route.examples.map((text, idx) => ({
           text,
