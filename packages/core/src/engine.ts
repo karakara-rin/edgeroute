@@ -274,6 +274,9 @@ export class EdgeRouteEngine {
         targetModel !== this.config.defaultModel &&
         maxRetries > 0
       ) {
+        console.warn(
+          `[EdgeRoute] Primary model "${targetModel}" returned error status ${callerResult.status ?? 'failed'}. Attempting fallback to defaultModel "${this.config.defaultModel}"...`,
+        );
         try {
           const fallbackResult = await caller(this.config.defaultModel);
           const fallbackFailed =
@@ -288,8 +291,16 @@ export class EdgeRouteEngine {
               actualProvider = fallbackResult.actualProvider;
             }
             retriedWithFallback = true;
+          } else {
+            console.warn(
+              `[EdgeRoute] Fallback to defaultModel "${this.config.defaultModel}" also failed with status ${fallbackResult.status ?? 'failed'}.`,
+            );
           }
-        } catch {
+        } catch (fallbackErr) {
+          console.warn(
+            `[EdgeRoute] Fallback to defaultModel "${this.config.defaultModel}" threw error:`,
+            fallbackErr,
+          );
           // If fallback fails to connect, keep original callerResult
         }
       }
@@ -297,6 +308,10 @@ export class EdgeRouteEngine {
       // If primary threw an exception, attempt fallback if eligible
       const maxRetries = this.config.maxRetries ?? 1;
       if (maxRetries > 0 && targetModel !== this.config.defaultModel) {
+        console.warn(
+          `[EdgeRoute] Primary model "${targetModel}" threw error. Attempting fallback to defaultModel "${this.config.defaultModel}"... Error:`,
+          err,
+        );
         try {
           const fallbackResult = await caller(this.config.defaultModel);
           callerResult = fallbackResult;
@@ -305,7 +320,11 @@ export class EdgeRouteEngine {
             actualProvider = fallbackResult.actualProvider;
           }
           retriedWithFallback = true;
-        } catch {
+        } catch (fallbackErr) {
+          console.error(
+            `[EdgeRoute] Both primary "${targetModel}" and fallback "${this.config.defaultModel}" failed. Fallback error:`,
+            fallbackErr,
+          );
           throw err;
         }
       } else {
@@ -384,6 +403,8 @@ export class EdgeRouteEngine {
       actualProvider,
       retriedWithFallback,
       response: callerResult.response,
+      ok: callerResult.ok,
+      status: callerResult.status,
       usage,
       costSavings,
       headers,

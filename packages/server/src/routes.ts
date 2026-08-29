@@ -6,7 +6,11 @@ import {
   SemanticClassifier,
 } from '@edgeroute/core';
 import { dispatchProviderRequest } from './providers/index.js';
-import { captureAndCacheStream, createCachedStream } from './streaming.js';
+import {
+  captureAndCacheStream,
+  createCachedStream,
+  createSafeStream,
+} from './streaming.js';
 
 export interface ChatCompletionToolCall {
   id: string;
@@ -194,18 +198,23 @@ export function createRouterRoutes(
 
         let parsedBody: any = undefined;
         let usage: any = undefined;
+        let rawBodyText: string | undefined = undefined;
 
         if (!body.stream && response.ok) {
           try {
-            parsedBody = await response.json();
-            usage = parsedBody.usage;
-          } catch {
-            // Keep parsedBody undefined if not JSON
+            rawBodyText = await response.text();
+            parsedBody = JSON.parse(rawBodyText);
+            usage = parsedBody?.usage;
+          } catch (parseErr) {
+            console.warn(
+              `[EdgeRoute/Server] Failed to parse JSON response body for model "${targetModel}". Keeping raw body text. Error:`,
+              parseErr,
+            );
           }
         }
 
         return {
-          response: parsedBody ?? response,
+          response: parsedBody ?? rawBodyText ?? response,
           ok: response.ok,
           status: response.status,
           headers: response.headers,
@@ -264,17 +273,28 @@ export function createRouterRoutes(
         });
       }
 
-      return new Response(upstreamResponse?.body, {
+      const safeStream = upstreamResponse?.body
+        ? createSafeStream(upstreamResponse.body, result.actualModel)
+        : upstreamResponse?.body;
+
+      return new Response(safeStream, {
         status: upstreamResponse?.status ?? 200,
         headers,
       });
     }
 
-    // 3. Non-streaming JSON response
+    // 3. Non-streaming response
     const headers = new Headers(result.headers);
+    if (typeof result.response === 'string') {
+      return new Response(result.response, {
+        status: result.status ?? 200,
+        headers,
+      });
+    }
+
     if (result.response && typeof result.response === 'object' && !(result.response instanceof Response)) {
       return new Response(JSON.stringify(result.response), {
-        status: 200,
+        status: result.status ?? 200,
         headers,
       });
     }
@@ -286,8 +306,8 @@ export function createRouterRoutes(
       });
     }
 
-    return new Response(JSON.stringify(result.response), {
-      status: 200,
+    return new Response(String(result.response ?? ''), {
+      status: result.status ?? 200,
       headers,
     });
   });
