@@ -4,13 +4,23 @@
   "main": "src/index.ts",
   "compatibility_date": "2024-11-01",
   "compatibility_flags": ["nodejs_compat"],
+
+  // 1. Cloudflare Workers AI for $0 Free Neural Embeddings (@cf/baai/bge-small-en-v1.5)
+  "ai": {
+    "binding": "AI"
+  },
+
+  // 2. Cloudflare KV for Sub-Millisecond Global Distributed Semantic Cache
   "kv_namespaces": [
     {
       "binding": "CACHE_KV",
       "id": "YOUR_KV_NAMESPACE_ID"
     }
   ],
+
+  // 3. Public environment variables (Set secret API keys using `wrangler secret put <KEY>`)
   "vars": {
     "DEFAULT_MODEL": "gpt-4o-mini"
   }
 }
+
