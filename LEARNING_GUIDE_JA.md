@@ -185,6 +185,15 @@ Web 標準の `Request` / `Response` / `fetch` API をベースにしている�
 | `X-EdgeRoute-Cost-Saved-USD` | 削減できたコスト ($) | `0.002350` |
 | `X-EdgeRoute-Cost-Saved-Percent` | コスト削減率 (%) | `94.00%` |
 
+### 開発者向けリッチログ出力 (`ServerLogger`)
+[`packages/server/src/logger.ts`](file:///c:/Users/rin01/sample-dev/edgeroute/packages/server/src/logger.ts)
+
+開発時のリアルタイム可視化として、`picocolors` を用いた色鮮やかなリクエストログを出力します：
+- **キャッシュヒット**: `[HIT ⚡ 0.3ms] (Semantic Cache Hit, Saved $0.0050)`
+- **ルーティング結果**: `[ROUTE 🎯] Matched "simple-qa" -> gpt-4o-mini (Saved $0.0042 vs gpt-4o)`
+- **フォールバック**: `[FALLBACK 🛡️] Primary model 429 -> Fallback to defaultModel (gpt-4o)`
+- テスト環境（`NODE_ENV=test` や `VITEST=true`）では自動的にログを抑制し、CI/テストを邪魔しません。
+
 ---
 
 ## 6. 設定ファイルの書き方 & チューニング方法
@@ -328,9 +337,22 @@ export default defineConfig({
 
 ## 9. @edgeroute/cli によるオフラインデバッグ & 自動評価
 
-`@edgeroute/cli` は、プロキシサーバーを起動することなく、ローカル環境でルーティング精度のデバッグ・データセット評価・ベクトル事前ビルドを行うための開発者向けツールキットです。
+`@edgeroute/cli` は、ローカルプロキシサーバーの起動、ルーティング精度のデバッグ、データセット評価、ベクトル事前ビルドを行うための開発者向けツールキットです。
 
-### ① 即座にルーティング判定をテスト (`edgeroute test <prompt>`)
+### ① ローカル開発プロキシサーバーの起動 (`edgeroute dev`)
+
+`router.config.ts` を読み込み、ローカルで OpenAI 互換プロキシサーバーを立ち上げます。
+リクエスト処理時は、リアルタイムでルーティング判定結果、キャッシュヒット、削減コストを色鮮やかにターミナル出力します。
+
+```bash
+# デフォルト (ポート 3000) で起動
+npx edgeroute dev
+
+# ポート指定・設定ファイル指定
+npx edgeroute dev --port 8080 --config ./router.config.ts
+```
+
+### ② 即座にルーティング判定をテスト (`edgeroute test <prompt>`)
 
 任意のプロンプト文字列が「どのルールに該当し、どのモデルに送られ、コストが幾ら安くなるか」を 1 秒でターミナルに出力します。
 
@@ -356,7 +378,7 @@ npx edgeroute test "Hello, summarize this text" --json
 • Latency:    0.34ms (Local vector math)
 ```
 
-### ② 過去ログによるコスト削減シミュレーション (`edgeroute eval`)
+### ③ 過去ログによるコスト削減シミュレーション (`edgeroute eval`)
 
 過去のリクエストログ（JSONL / JSON / CSV）を流し込み、モデル振り分け率や削減コストをシミュレートします。
 `--tune` オプションを指定すると、閾値を自動スイープして「90%以上の精度を保ちつつ最大コスト削減できる推奨閾値」を探索します。
@@ -365,7 +387,7 @@ npx edgeroute test "Hello, summarize this text" --json
 npx edgeroute eval --dataset ./prompts.jsonl --tune --threshold-range 0.5:0.95:0.05
 ```
 
-### ③ オフラインベクトル事前生成 (`edgeroute build-embeddings`)
+### ④ オフラインベクトル事前生成 (`edgeroute build-embeddings`)
 
 ルート例文（`examples`）の埋め込みベクトルをオフラインで静的 JSON/TS ファイル（`router.embeddings.json`）に事前書き出しします。
 これにより、Edge ランタイム起動時のベクトル計算オーバーヘッドを **0ms（コールドスタートゼロ）** にできます。

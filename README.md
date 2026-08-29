@@ -256,7 +256,41 @@ npm install -g @edgeroute/cli
 npx edgeroute --help
 ```
 
-### 1. Instant Prompt Routing Test (`edgeroute test`)
+### 1. Local Dev Proxy Server with Real-Time Feedback (`edgeroute dev`)
+
+Start the EdgeRoute proxy server locally with colorful real-time feedback showing routing matches, semantic cache hits, fallback retries, and estimated cost savings:
+
+```bash
+# Start local dev server (default: port 3000)
+npx edgeroute dev
+
+# Custom port and config path
+npx edgeroute dev --port 8080 --config ./router.config.ts
+```
+
+**Real-Time Terminal Output Example:**
+```text
+🚀 EdgeRoute Dev Server running!
+──────────────────────────────────────────────────
+  • Local:   http://localhost:3000
+  • Health:  http://localhost:3000/health
+  • Proxy:   http://localhost:3000/v1/chat/completions
+  • Default: gpt-4o
+  • Routes:  2 configured
+──────────────────────────────────────────────────
+
+8:30:15 PM POST /v1/chat/completions 200 (14.2ms)
+  [ROUTE 🎯] Matched "simple-qa" -> gpt-4o-mini (Saved $0.0042 vs gpt-4o)
+
+8:30:18 PM POST /v1/chat/completions 200 (0.3ms)
+  [HIT ⚡ 0.3ms] (Semantic Cache Hit, Saved $0.0050)
+
+8:30:25 PM POST /v1/chat/completions 200 (450.0ms)
+  [FALLBACK 🛡️] Primary model 429 -> Fallback to defaultModel (gpt-4o)
+  [ROUTE 🎯] Matched "simple-qa" -> gpt-4o
+```
+
+### 2. Instant Prompt Routing Test (`edgeroute test`)
 
 Debug and verify routing tier decisions, similarity scores, selected target model, and cost savings in 1 second directly from your terminal:
 
@@ -282,7 +316,7 @@ npx edgeroute test "Translate this to Japanese" --json
 • Latency:    0.34ms (Local vector math)
 ```
 
-### 2. Dataset Simulation & Threshold Auto-Tuning (`edgeroute eval`)
+### 3. Dataset Simulation & Threshold Auto-Tuning (`edgeroute eval`)
 
 Replay historical request logs against your routing configuration to measure cumulative cost savings and find the optimal threshold:
 
@@ -294,7 +328,7 @@ npx edgeroute eval --dataset ./logs/prompts.jsonl
 npx edgeroute eval --dataset ./logs/prompts.jsonl --tune --threshold-range 0.5:0.95:0.05
 ```
 
-### 3. Offline Vector Pre-Compiler (`edgeroute build-embeddings`)
+### 4. Offline Vector Pre-Compiler (`edgeroute build-embeddings`)
 
 Pre-compile route example vectors offline to eliminate edge cold-start overhead:
 

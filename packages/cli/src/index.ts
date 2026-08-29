@@ -1,13 +1,16 @@
 import { Command } from 'commander';
 import { buildEmbeddingsCommand } from './commands/build-embeddings.js';
+import { devCommand } from './commands/dev.js';
 import { evalCommand } from './commands/eval.js';
 import { initCommand } from './commands/init.js';
 import { testCommand } from './commands/test.js';
 
 export * from './commands/build-embeddings.js';
+export * from './commands/dev.js';
 export * from './commands/eval.js';
 export * from './commands/init.js';
 export * from './commands/test.js';
+export * from './presets/index.js';
 export * from './report.js';
 export * from './utils/config-loader.js';
 export * from './utils/dataset-loader.js';
@@ -19,6 +22,22 @@ export function createProgram(): Command {
     .name('edgeroute')
     .description('EdgeRoute CLI — Offline Vector Pre-compiler & Routing Evaluation Engine')
     .version('0.1.0');
+
+  // Command: dev
+  program
+    .command('dev')
+    .description('Start local EdgeRoute proxy server with real-time colored request feedback')
+    .option('-c, --config <path>', 'Path to router.config.ts or config file')
+    .option('-p, --port <number>', 'Port to listen on (default: 3000)')
+    .option('-h, --host <host>', 'Host address to bind to (default: 0.0.0.0)')
+    .action(async (options) => {
+      try {
+        await devCommand(options);
+      } catch (err: any) {
+        console.error(`Error starting dev server: ${err.message}`);
+        process.exit(1);
+      }
+    });
 
   // Command: build-embeddings
   program
@@ -62,9 +81,12 @@ export function createProgram(): Command {
   // Command: init
   program
     .command('init')
-    .description('Scaffold a new starter router.config.ts file')
-    .option('-o, --output <path>', 'Output file path (default: router.config.ts)')
-    .option('-f, --force', 'Overwrite existing config file if present')
+    .description('Scaffold a new starter router.config.ts and .env.example file')
+    .option('-p, --preset <name>', 'Select configuration preset (cost-saver | coding-agent | minimal-cache-only)')
+    .option('-y, --yes', 'Skip interactive prompt and use default cost-saver preset')
+    .option('-o, --output <path>', 'Output config file path (default: router.config.ts)')
+    .option('--env-output <path>', 'Output environment template file path (default: .env.example)')
+    .option('-f, --force', 'Overwrite existing config and env files if present')
     .action(async (options) => {
       try {
         await initCommand(options);
