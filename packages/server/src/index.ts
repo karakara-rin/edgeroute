@@ -10,6 +10,7 @@ export * from './proxy.js';
 export * from './routes.js';
 export * from './streaming.js';
 export * from './providers/index.js';
+export * from './middleware/index.js';
 
 /**
  * Creates and initializes a configured Hono EdgeRoute proxy server instance.

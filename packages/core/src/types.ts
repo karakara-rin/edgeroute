@@ -104,6 +104,47 @@ export type CacheConfigInput = z.input<typeof CacheConfigSchema>;
 export const RoutingStrategySchema = z.enum(['hybrid', 'semantic', 'complexity']);
 export type RoutingStrategy = z.infer<typeof RoutingStrategySchema>;
 
+export const EdgeRouteAuthConfigSchema = z.object({
+  /** Array of valid API keys for authenticating client requests to EdgeRoute proxy */
+  apiKeys: z.array(z.string()).optional(),
+  /** Custom validation function (async or sync) */
+  validator: z.custom<((key: string, req: Request) => Promise<boolean> | boolean)>().optional(),
+});
+
+export type EdgeRouteAuthConfig = z.infer<typeof EdgeRouteAuthConfigSchema>;
+
+export const EdgeRouteRateLimitConfigSchema = z.object({
+  /** Maximum number of requests allowed within the window */
+  maxRequests: z.number().int().positive(),
+  /** Sliding window duration in milliseconds (default: 60,000ms = 1 minute) */
+  windowMs: z.number().positive().optional().default(60000),
+  /** Custom identifier extraction function (e.g. client IP or authenticated key) */
+  keyGenerator: z.custom<((req: Request) => string | Promise<string>)>().optional(),
+});
+
+export type EdgeRouteRateLimitConfig = z.infer<typeof EdgeRouteRateLimitConfigSchema>;
+
+export const EdgeRouteSecurityConfigSchema = z.object({
+  /** Enable or configure Cross-Origin Resource Sharing (CORS) */
+  cors: z
+    .union([
+      z.boolean(),
+      z.object({
+        origin: z.union([z.string(), z.array(z.string())]).optional(),
+        allowMethods: z.array(z.string()).optional(),
+        allowHeaders: z.array(z.string()).optional(),
+        exposeHeaders: z.array(z.string()).optional(),
+        maxAge: z.number().optional(),
+        credentials: z.boolean().optional(),
+      }),
+    ])
+    .optional(),
+  /** Maximum request body size in bytes (default: 10MB = 10485760 bytes) */
+  maxBodySize: z.number().positive().optional().default(10485760),
+});
+
+export type EdgeRouteSecurityConfig = z.infer<typeof EdgeRouteSecurityConfigSchema>;
+
 export const EdgeRouteConfigSchema = z.object({
   /** Fallback model if no routes match with sufficient score or high-complexity queries */
   defaultModel: z.string(),
@@ -117,6 +158,12 @@ export const EdgeRouteConfigSchema = z.object({
   complexityWeights: ComplexityWeightsSchema.optional(),
   /** Providers configuration for upstream dispatch */
   providers: z.record(ProviderConfigSchema).optional(),
+  /** Authentication & authorization configuration for the proxy */
+  auth: EdgeRouteAuthConfigSchema.optional(),
+  /** Rate limiting configuration */
+  rateLimit: EdgeRouteRateLimitConfigSchema.optional(),
+  /** Security and protection configuration (CORS, body limits) */
+  security: EdgeRouteSecurityConfigSchema.optional(),
   /** Embedding provider configuration */
   embedding: EmbeddingConfigSchema.optional().default({ provider: 'auto' }),
   /** Semantic cache configuration */

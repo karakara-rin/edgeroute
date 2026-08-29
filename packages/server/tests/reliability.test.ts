@@ -155,6 +155,7 @@ describe('Reliability & Error Handling Tests', () => {
       const config = defineConfig({
         defaultModel: 'gpt-4o-mini',
         routes: [],
+        embedding: { provider: 'hash' },
       });
       const engine = new EdgeRouteEngine(config);
       await engine.initialize();

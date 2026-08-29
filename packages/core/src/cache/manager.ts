@@ -1,4 +1,5 @@
 import { calculateTokenCost } from '../cost.js';
+import { estimateTokens } from '../tokens.js';
 import type { EmbeddingProvider, Vector } from '../embeddings/types.js';
 import type { CacheConfig, CacheConfigInput, ModelPricing } from '../types.js';
 import { InMemoryCacheStore } from './memory.js';
@@ -176,10 +177,15 @@ export class SemanticCacheManager {
     const model = entry.metadata?.model || 'gpt-4o';
     const usage = entry.metadata?.usage;
 
-    const promptTokens = usage?.prompt_tokens ?? Math.ceil(entry.prompt.length / 4);
-    const completionTokens =
-      usage?.completion_tokens ??
-      Math.ceil(JSON.stringify(entry.response).length / 4);
+    const promptTokens = usage?.prompt_tokens ?? estimateTokens(entry.prompt);
+    const responseText =
+      typeof entry.response === 'string'
+        ? entry.response
+        : typeof (entry.response as any)?.choices?.[0]?.message?.content === 'string'
+          ? (entry.response as any).choices[0].message.content
+          : JSON.stringify(entry.response);
+
+    const completionTokens = usage?.completion_tokens ?? estimateTokens(responseText);
 
     const savedCost = calculateTokenCost(
       model,

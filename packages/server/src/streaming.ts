@@ -1,6 +1,4 @@
-/**
- * Utilities for OpenAI-compatible Server-Sent Events (SSE) streaming and cache stream capture.
- */
+import { estimateTokens } from '@edgeroute/core';
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -219,6 +217,10 @@ export function captureAndCacheStream(
   upstreamStream: ReadableStream<Uint8Array>,
   model: string,
   onComplete: (fullResponse: Record<string, unknown>) => Promise<void> | void,
+  options?: {
+    promptTokens?: number;
+    prompt?: string;
+  },
 ): ReadableStream<Uint8Array> {
   const safeStream = createSafeStream(upstreamStream, model);
   const [clientStream, cacheStream] = safeStream.tee();
@@ -345,11 +347,14 @@ export function captureAndCacheStream(
         if (usage) {
           fullResponse['usage'] = usage;
         } else {
-          // Approximate tokens if not provided in stream
-          const promptEstimate = 20;
+          // Approximate tokens if not provided in stream using multilingual estimator
+          const promptEstimate =
+            options?.promptTokens ??
+            (options?.prompt ? estimateTokens(options.prompt) : 20);
           const completionEstimate = Math.max(
             1,
-            Math.ceil((accumulatedContent.length + JSON.stringify(toolCallsArray).length) / 4),
+            estimateTokens(accumulatedContent) +
+              (hasToolCalls ? estimateTokens(JSON.stringify(toolCallsArray)) : 0),
           );
           fullResponse['usage'] = {
             prompt_tokens: promptEstimate,
