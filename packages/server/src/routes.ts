@@ -6,6 +6,7 @@ import {
   SemanticClassifier,
   estimateMessagesTokens,
   extractContentText,
+  compareRoutingCost,
 } from '@edgeroute/core';
 import { dispatchProviderRequest } from './providers/index.js';
 import {
@@ -18,6 +19,7 @@ import {
   createRateLimitMiddleware,
   createSecurityMiddlewares,
 } from './middleware/index.js';
+import { ServerLogger, type ServerLoggerOptions } from './logger.js';
 
 export interface ChatCompletionToolCall {
   id: string;
@@ -146,6 +148,7 @@ export function createRouterRoutes(
   configOrEngine: EdgeRouteConfig | EdgeRouteEngine,
   classifierOrEngine?: SemanticClassifier | EdgeRouteEngine,
   cacheManager?: SemanticCacheManager,
+  loggerOrOptions?: ServerLogger | ServerLoggerOptions,
 ) {
   let engine: EdgeRouteEngine;
   let config: EdgeRouteConfig;
@@ -164,6 +167,11 @@ export function createRouterRoutes(
       cacheManager,
     });
   }
+
+  const logger =
+    loggerOrOptions instanceof ServerLogger
+      ? loggerOrOptions
+      : new ServerLogger(loggerOrOptions);
 
   const app = new Hono();
 
@@ -209,10 +217,17 @@ export function createRouterRoutes(
 
   // Main OpenAI-compatible chat completions proxy
   app.post('/v1/chat/completions', async (c) => {
+    const startTime = performance.now();
     let body: ChatCompletionRequestBody;
     try {
       body = await c.req.json<ChatCompletionRequestBody>();
     } catch {
+      logger.logRequest({
+        method: 'POST',
+        path: '/v1/chat/completions',
+        status: 400,
+        durationMs: performance.now() - startTime,
+      });
       return c.json({ error: { message: 'Invalid JSON request body' } }, 400);
     }
 
@@ -279,6 +294,44 @@ export function createRouterRoutes(
         };
       },
     );
+
+    // Calculate saved cost USD (defaultModel hypothetical cost vs actual/cache cost)
+    let savedCostUSD = result.savedCostUSD;
+    if (savedCostUSD === undefined || savedCostUSD === null) {
+      if (result.costSavings?.savingsUSD !== undefined) {
+        savedCostUSD = result.costSavings.savingsUSD;
+      } else {
+        const estimatedInputTokens = result.usage?.prompt_tokens ?? promptTokens;
+        const estimatedOutputTokens = result.usage?.completion_tokens ?? 50;
+        const comparison = compareRoutingCost(
+          result.actualModel,
+          config.defaultModel,
+          estimatedInputTokens,
+          estimatedOutputTokens,
+          config.customPricing,
+        );
+        savedCostUSD = result.fromCache
+          ? comparison.hypotheticalDefaultCostUSD
+          : comparison.savingsUSD;
+      }
+    }
+
+    const durationMs = performance.now() - startTime;
+    const responseStatus = result.status ?? (result.ok === false ? 500 : 200);
+
+    logger.logRequest({
+      method: 'POST',
+      path: '/v1/chat/completions',
+      status: responseStatus,
+      durationMs,
+      fromCache: result.fromCache,
+      cacheLatencyMs: result.cacheLatencyMs,
+      matchedRoute: result.classification?.matchedRoute,
+      targetModel: result.actualModel,
+      defaultModel: config.defaultModel,
+      savedCostUSD,
+      retriedWithFallback: result.retriedWithFallback,
+    });
 
     // 1. If Cache Hit
     if (result.fromCache && result.cachedResponse) {
