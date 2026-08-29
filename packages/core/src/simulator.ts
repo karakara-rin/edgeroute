@@ -385,3 +385,6 @@ export function evaluateComplexityRouting(
     itemResults,
   };
 }
+
+export const runComplexitySimulation = evaluateComplexityRouting;
+

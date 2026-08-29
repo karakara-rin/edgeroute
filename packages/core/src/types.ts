@@ -145,6 +145,23 @@ export const EdgeRouteSecurityConfigSchema = z.object({
 
 export type EdgeRouteSecurityConfig = z.infer<typeof EdgeRouteSecurityConfigSchema>;
 
+export const PrecomputedEmbeddingEntrySchema = z.object({
+  route: z.string(),
+  text: z.string(),
+  vector: z.array(z.number()),
+});
+export type PrecomputedEmbeddingEntry = z.infer<typeof PrecomputedEmbeddingEntrySchema>;
+
+export const PrecomputedEmbeddingsSchema = z.object({
+  version: z.string().optional().default('1.0'),
+  provider: z.string(),
+  model: z.string().optional(),
+  dimensions: z.number().int().positive(),
+  createdAt: z.string().optional(),
+  embeddings: z.array(PrecomputedEmbeddingEntrySchema),
+});
+export type PrecomputedEmbeddings = z.infer<typeof PrecomputedEmbeddingsSchema>;
+
 export const EdgeRouteConfigSchema = z.object({
   /** Fallback model if no routes match with sufficient score or high-complexity queries */
   defaultModel: z.string(),
@@ -166,6 +183,8 @@ export const EdgeRouteConfigSchema = z.object({
   security: EdgeRouteSecurityConfigSchema.optional(),
   /** Embedding provider configuration */
   embedding: EmbeddingConfigSchema.optional().default({ provider: 'auto' }),
+  /** Pre-compiled offline embeddings for zero-cold-start initialization */
+  precomputedEmbeddings: z.union([PrecomputedEmbeddingsSchema, z.array(PrecomputedEmbeddingEntrySchema)]).optional(),
   /** Semantic cache configuration */
   cache: CacheConfigSchema.optional(),
   /** Fallback retry count on downstream 429/5xx error */
