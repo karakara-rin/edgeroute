@@ -1,12 +1,9 @@
 import type { Vector } from '../embeddings/types.js';
+import type { TokenUsage } from '../types.js';
 
 export interface CacheEntryMetadata {
   model: string;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    total_tokens?: number;
-  };
+  usage?: TokenUsage;
   [key: string]: unknown;
 }
 

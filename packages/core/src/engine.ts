@@ -4,8 +4,11 @@ import {
   type EdgeRouteConfig,
   type ProviderType,
   type RouteCaller,
+  type RouteCallerResult,
   type RouteEngineExecutionResult,
   type RouteEngineRequest,
+  type TokenUsage,
+  isRetryableStatus,
 } from './types.js';
 import { SemanticClassifier } from './classifier.js';
 import { SemanticCacheManager } from './cache/manager.js';
@@ -136,7 +139,7 @@ export class EdgeRouteEngine {
    * 4. Cost tracking & telemetry header creation
    * 5. Async cache persistence
    */
-  async execute<T = any>(
+  async execute<T = unknown>(
     request: RouteEngineRequest,
     caller: RouteCaller<T>,
   ): Promise<RouteEngineExecutionResult<T>> {
@@ -214,19 +217,7 @@ export class EdgeRouteEngine {
     let targetModel = classification.targetModel;
     let actualProvider: ProviderType = resolvedExplicitProvider ?? 'openai';
     let retriedWithFallback = false;
-    let callerResult: {
-      response: T;
-      ok?: boolean;
-      status?: number;
-      usage?: {
-        prompt_tokens?: number;
-        completion_tokens?: number;
-        total_tokens?: number;
-      };
-      headers?: Record<string, string> | Headers;
-      actualModel?: string;
-      actualProvider?: ProviderType;
-    };
+    let callerResult: RouteCallerResult<T>;
 
     try {
       callerResult = await caller(targetModel, resolvedExplicitProvider);
@@ -234,10 +225,7 @@ export class EdgeRouteEngine {
       if (callerResult.actualProvider) actualProvider = callerResult.actualProvider;
 
       // Failover retry on error status (429 or 5xx)
-      const isFailedStatus =
-        callerResult.ok === false ||
-        (callerResult.status && (callerResult.status === 429 || callerResult.status >= 500));
-
+      const isFailedStatus = isRetryableStatus(callerResult.status, callerResult.ok);
       const maxRetries = this.config.maxRetries ?? 1;
 
       if (
@@ -250,10 +238,7 @@ export class EdgeRouteEngine {
         );
         try {
           const fallbackResult = await caller(this.config.defaultModel);
-          const fallbackFailed =
-            fallbackResult.ok === false ||
-            (fallbackResult.status &&
-              (fallbackResult.status === 429 || fallbackResult.status >= 500));
+          const fallbackFailed = isRetryableStatus(fallbackResult.status, fallbackResult.ok);
 
           if (!fallbackFailed) {
             callerResult = fallbackResult;
@@ -392,7 +377,7 @@ export class EdgeRouteEngine {
     model: string,
     queryVector?: number[],
     customTtl?: number,
-    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number },
+    usage?: TokenUsage,
   ): Promise<void> {
     if (this.cacheManager && this.cacheManager.isEnabled() && prompt) {
       await this.cacheManager.save({
