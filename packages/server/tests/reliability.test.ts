@@ -1,11 +1,18 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { forwardChatCompletion } from '../src/proxy.js';
 import { createSafeStream } from '../src/streaming.js';
 import { createRouterRoutes } from '../src/routes.js';
 import { EdgeRouteEngine, defineConfig } from '@edgeroute/core';
 
 describe('Reliability & Error Handling Tests', () => {
+  let originalFetch: typeof globalThis.fetch;
+
   beforeEach(() => {
+    originalFetch = globalThis.fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
     vi.restoreAllMocks();
   });
 
@@ -26,6 +33,10 @@ describe('Reliability & Error Handling Tests', () => {
       // Mock fetch
       let callCount = 0;
       globalThis.fetch = vi.fn().mockImplementation(async (url, init) => {
+        const urlStr = String(url);
+        if (urlStr.includes('huggingface.co') || urlStr.includes('.onnx')) {
+          return originalFetch(url, init);
+        }
         callCount++;
         if (callCount === 1) {
           // Primary llama fails with 429
@@ -70,7 +81,11 @@ describe('Reliability & Error Handling Tests', () => {
       });
 
       let callCount = 0;
-      globalThis.fetch = vi.fn().mockImplementation(async () => {
+      globalThis.fetch = vi.fn().mockImplementation(async (url, init) => {
+        const urlStr = String(url);
+        if (urlStr.includes('huggingface.co') || urlStr.includes('.onnx')) {
+          return originalFetch(url, init);
+        }
         callCount++;
         if (callCount === 1) {
           throw new Error('Connection reset by peer');
@@ -145,12 +160,16 @@ describe('Reliability & Error Handling Tests', () => {
       await engine.initialize();
       const app = createRouterRoutes(config, engine);
 
-      globalThis.fetch = vi.fn().mockResolvedValue(
-        new Response('<html>502 Bad Gateway</html>', {
+      globalThis.fetch = vi.fn().mockImplementation(async (url, init) => {
+        const urlStr = String(url);
+        if (urlStr.includes('huggingface.co') || urlStr.includes('.onnx')) {
+          return originalFetch(url, init);
+        }
+        return new Response('<html>502 Bad Gateway</html>', {
           status: 200, // Even if status is 200 with HTML body
           headers: { 'content-type': 'text/html' },
-        }),
-      );
+        });
+      });
 
       const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
