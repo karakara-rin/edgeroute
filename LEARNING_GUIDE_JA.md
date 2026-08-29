@@ -20,6 +20,7 @@
    - [観測性メタデータヘッダー一覧](#観測性メタデータヘッダー一覧)
 6. [設定ファイルの書き方 & チューニング方法](#6-設定ファイルの書き方--チューニング方法)
 7. [ローカルでの動かし方 & テスト方法](#7-ローカルでの動かし方--テスト方法)
+8. [セキュリティ・認証・分散運用のアーキテクチャ](#8-セキュリティ認証分散運用のアーキテクチャ)
 
 ---
 
@@ -277,7 +278,48 @@ curl -i http://localhost:3000/v1/chat/completions \
   -H "Authorization: Bearer $OPENAI_API_KEY" \
   -d '{
     "model": "gpt-4o",
-    "messages": [{"role": "user", "content": "こんにちは！簡単な挨拶です"}]
-  }'
-```
 レスポンスヘッダーに `X-EdgeRoute-Target-Model: gpt-4o-mini` や `X-EdgeRoute-Cost-Saved-USD` が返ってくることを確認できます。
+
+---
+
+## 8. セキュリティ・認証・分散運用のアーキテクチャ
+
+### 🔒 1. プロキシ認証 & 踏み台防止 (`auth`)
+- **APIキー検証**: `auth.apiKeys`（静的キーリスト）または `auth.validator`（カスタム非同期関数）により、`/v1/*` エンドポイントを保護します。
+- **定数時間比較**: タイミング攻撃（サイドチャネル攻撃）を防ぐため、文字列比較には `constantTimeEqual` を使用しています。
+- **ヘルスチェックの分離**: `/health` はロードバランサ監視用としてパブリックに解放されます。
+
+### 🛡️ 2. 認証情報の分離と BYOK (Bring Your Own Key)
+プロキシ認証用の Bearer トークンが、上流の OpenAI / Anthropic 等に誤って転送・漏洩しないよう隔離されています。
+クライアントが自身の API キーを持ち込む（BYOK）場合は、以下のプロバイダ別ヘッダーを使用可能です。
+- **OpenAI**: `x-openai-api-key` / `x-provider-api-key`
+- **Anthropic**: `x-anthropic-api-key` / `x-api-key`
+- **Google Gemini**: `x-goog-api-key` / `x-gemini-api-key`
+- **Groq**: `x-groq-api-key`
+
+### ⏱️ 3. レートリミット & DoS ガード (`rateLimit`, `security`)
+- **レートリミット**: スライディングウィンドウ方式でクライアント IP または API キーごとにリクエスト数を制御（超過時は `429 Too Many Requests` と `Retry-After` を返却）。
+- **ボディサイズ制限**: `security.maxBodySize` により巨大ペイロード（画像爆弾や長大プロンプト）によるメモリ枯渇を防止（超過時は `413 Payload Too Large`）。
+- **CORS 制御**: 信頼するオリジンからのみのアクセスを許可。
+
+### 🗄️ 4. 分散環境でのキャッシュ共有 (`UpstashRedisCacheStore`)
+サーバーレス（Cloudflare Workers / Vercel Edge）やコンテナ複数台（ECS / K8s）でスケールアウトした場合、インメモリキャッシュではインスタンス間で共有できません。
+`UpstashRedisCacheStore` を指定することで、REST 経由でグローバルなキャッシュ共有とセマンティック検索が可能になります。
+
+```typescript
+import { UpstashRedisCacheStore } from '@edgeroute/core';
+
+export default defineConfig({
+  defaultModel: 'gpt-5.6-sol',
+  cache: {
+    enabled: true,
+    threshold: 0.95,
+    store: new UpstashRedisCacheStore({
+      url: process.env.UPSTASH_REDIS_REST_URL!,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+    }),
+  },
+  routes: [/* ... */],
+});
+```
+

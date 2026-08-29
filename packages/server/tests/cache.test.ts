@@ -322,4 +322,136 @@ describe('Server Semantic Cache Layer', () => {
     expect(res.headers.get('X-EdgeRoute-Cache')).toBe('SKIPPED');
     expect(upstreamCallCount).toBe(1);
   });
+
+  it('should isolate cache entries with different system prompts to prevent cache collision', async () => {
+    let upstreamCallCount = 0;
+
+    globalThis.fetch = vi.fn().mockImplementation(async (url, init) => {
+      upstreamCallCount++;
+      const body = JSON.parse(init.body as string);
+      const isLawyer = body.messages.some((m: any) => m.content.includes('lawyer'));
+      return new Response(
+        JSON.stringify({
+          id: `chatcmpl-${upstreamCallCount}`,
+          choices: [
+            {
+              message: {
+                role: 'assistant',
+                content: isLawyer ? 'Legal perspective.' : 'Casual perspective.',
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    });
+
+    const { app } = await createEdgeRouteServer(config);
+
+    // Request A: System prompt "lawyer", User prompt "What is a contract?"
+    const resA = await app.request('/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [
+          { role: 'system', content: 'You are a legal expert lawyer.' },
+          { role: 'user', content: 'What is a contract?' },
+        ],
+      }),
+    });
+    expect(resA.headers.get('X-EdgeRoute-Cache')).toBe('MISS');
+    const jsonA = await resA.json();
+    expect(jsonA.choices[0].message.content).toBe('Legal perspective.');
+    expect(upstreamCallCount).toBe(1);
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Request B: System prompt "pirate", User prompt SAME "What is a contract?"
+    const resB = await app.request('/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [
+          { role: 'system', content: 'You are a friendly pirate companion.' },
+          { role: 'user', content: 'What is a contract?' },
+        ],
+      }),
+    });
+
+    // Must be a MISS and NOT return the cached lawyer response!
+    expect(resB.headers.get('X-EdgeRoute-Cache')).toBe('MISS');
+    const jsonB = await resB.json();
+    expect(jsonB.choices[0].message.content).toBe('Casual perspective.');
+    expect(upstreamCallCount).toBe(2);
+  });
+
+  it('should isolate cache entries for multi-turn conversations with different history', async () => {
+    let upstreamCallCount = 0;
+
+    globalThis.fetch = vi.fn().mockImplementation(async (url, init) => {
+      upstreamCallCount++;
+      const body = JSON.parse(init.body as string);
+      const isTokyo = body.messages.some((m: any) => m.content?.includes('Tokyo'));
+      return new Response(
+        JSON.stringify({
+          id: `chatcmpl-turn-${upstreamCallCount}`,
+          choices: [
+            {
+              message: {
+                role: 'assistant',
+                content: isTokyo ? 'Tokyo population is ~14 million.' : 'Paris population is ~2 million.',
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    });
+
+    const { app } = await createEdgeRouteServer(config);
+
+    // Multi-turn conversation 1 about Tokyo
+    const res1 = await app.request('/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [
+          { role: 'user', content: 'Tell me about Tokyo' },
+          { role: 'assistant', content: 'Tokyo is the capital of Japan.' },
+          { role: 'user', content: 'What is its population?' },
+        ],
+      }),
+    });
+    expect(res1.headers.get('X-EdgeRoute-Cache')).toBe('MISS');
+    const json1 = await res1.json();
+    expect(json1.choices[0].message.content).toBe('Tokyo population is ~14 million.');
+    expect(upstreamCallCount).toBe(1);
+
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Multi-turn conversation 2 about Paris, where the last message is identical: "What is its population?"
+    const res2 = await app.request('/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [
+          { role: 'user', content: 'Tell me about Paris' },
+          { role: 'assistant', content: 'Paris is the capital of France.' },
+          { role: 'user', content: 'What is its population?' },
+        ],
+      }),
+    });
+
+    // Must be a MISS because previous dialogue context differs
+    expect(res2.headers.get('X-EdgeRoute-Cache')).toBe('MISS');
+    const json2 = await res2.json();
+    expect(json2.choices[0].message.content).toBe('Paris population is ~2 million.');
+    expect(upstreamCallCount).toBe(2);
+  });
 });

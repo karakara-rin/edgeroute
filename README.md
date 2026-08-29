@@ -107,13 +107,30 @@ export default defineConfig({
     provider: 'auto',
   },
 
-  // Sub-millisecond Semantic Cache configuration
+  // Sub-millisecond Semantic Cache configuration (In-Memory, Cloudflare KV, or Upstash Redis)
   cache: {
     enabled: true,
     threshold: 0.95, // Cosine similarity threshold
     ttl: 3600, // 1 hour TTL
     maxEntries: 1000,
     maxTemperature: 0.2, // Guardrail: only cache deterministic queries
+  },
+
+  // Proxy Authentication & Authorization
+  auth: {
+    apiKeys: [process.env.EDGEROUTE_API_KEY || 'sk-edgeroute-proxy-secret'],
+  },
+
+  // Rate Limiting (Sliding Window)
+  rateLimit: {
+    maxRequests: 100,
+    windowMs: 60_000, // 100 requests per minute
+  },
+
+  // Security & Protection Guardrails
+  security: {
+    cors: true,
+    maxBodySize: 5 * 1024 * 1024, // 5MB limit
   },
 
   routes: [
@@ -245,6 +262,53 @@ EdgeRoute enriches every upstream response with transparent routing and caching 
 | `X-EdgeRoute-Cost-Saved-USD` | `0.042300` | Estimated USD saved vs. `defaultModel` |
 | `X-EdgeRoute-Cost-Saved-Percent` | `100%` | Percentage of cost saved |
 | `X-EdgeRoute-Latency-Routing`| `0.12ms` | Microseconds elapsed for classification |
+| `X-RateLimit-Limit` | `100` | Allowed requests in rate limit window |
+| `X-RateLimit-Remaining` | `99` | Remaining requests in current window |
+| `X-RateLimit-Reset` | `1724912400` | Epoch timestamp when the rate limit quota resets |
+
+---
+
+## 🔒 Security, Authentication & BYOK (Bring Your Own Key)
+
+### 1. Proxy Authentication & Protection
+- **Bearer & API Key Authentication**: Protect `/v1/*` endpoints using `auth.apiKeys` or custom `auth.validator`. Constant-time comparison prevents timing side-channel attacks.
+- **Credential Isolation**: Client proxy tokens are securely isolated and never forwarded as LLM API keys upstream.
+- **Sliding-Window Rate Limiting**: Mitigate DoS attacks and runaway costs via `rateLimit.maxRequests`.
+- **CORS & Payload Guards**: Configure allowed origins and reject oversized request bodies via `security.maxBodySize`.
+
+### 2. Multi-Provider BYOK Header Mapping
+When using client-managed API keys across multiple routed providers:
+
+| Provider | Supported BYOK Header |
+| :--- | :--- |
+| **OpenAI** | `x-openai-api-key` \| `x-provider-api-key` \| `Authorization: Bearer <key>` |
+| **Anthropic** | `x-anthropic-api-key` \| `x-api-key` \| `x-provider-api-key` |
+| **Google Gemini** | `x-goog-api-key` \| `x-gemini-api-key` \| `x-provider-api-key` |
+| **Groq** | `x-groq-api-key` \| `x-provider-api-key` |
+
+---
+
+## 🗄️ Distributed Caching Across Multi-Instance Environments
+
+For serverless edge deployments (Cloudflare Workers, Vercel Edge, AWS Lambda, Kubernetes pods), utilize distributed cache stores:
+
+```typescript
+import { UpstashRedisCacheStore } from '@edgeroute/core';
+
+export default defineConfig({
+  defaultModel: 'gpt-5.6-sol',
+  cache: {
+    enabled: true,
+    threshold: 0.95,
+    store: new UpstashRedisCacheStore({
+      url: process.env.UPSTASH_REDIS_REST_URL!,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+      prefix: 'edgeroute:cache:',
+    }),
+  },
+  routes: [/* ... */],
+});
+```
 
 ---
 

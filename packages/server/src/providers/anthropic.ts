@@ -1,4 +1,5 @@
 import type { ProviderAdapter, ProviderRequestOptions } from './types.js';
+import { resolveProviderApiKey } from './utils.js';
 import type {
   ChatCompletionMessage,
   ChatCompletionTool,
@@ -39,11 +40,13 @@ export class AnthropicAdapter implements ProviderAdapter {
       providerConfig?.baseUrl || 'https://api.anthropic.com/v1'
     ).replace(/\/+$/, '');
 
-    const apiKey =
-      providerConfig?.apiKey ||
-      clientHeaders.get('x-api-key') ||
-      clientHeaders.get('authorization')?.replace(/^Bearer\s+/i, '') ||
-      (typeof process !== 'undefined' ? process.env.ANTHROPIC_API_KEY : '');
+    const apiKey = resolveProviderApiKey({
+      provider: 'anthropic',
+      config,
+      clientHeaders,
+      envKey: 'ANTHROPIC_API_KEY',
+      specificHeaderNames: ['x-anthropic-api-key'],
+    });
 
     const apiVersion = providerConfig?.apiVersion || '2023-06-01';
 

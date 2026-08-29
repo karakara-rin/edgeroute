@@ -5,6 +5,7 @@ export * from './complexity.js';
 export * from './simulator.js';
 export * from './cost.js';
 export * from './config.js';
+export * from './tokens.js';
 export * from './cache/index.js';
 export * from './engine.js';
 

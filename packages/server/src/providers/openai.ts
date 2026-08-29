@@ -1,4 +1,5 @@
 import type { ProviderAdapter, ProviderRequestOptions } from './types.js';
+import { resolveProviderApiKey } from './utils.js';
 
 export class OpenAIAdapter implements ProviderAdapter {
   readonly name = 'openai' as const;
@@ -11,10 +12,13 @@ export class OpenAIAdapter implements ProviderAdapter {
       providerConfig?.baseUrl || 'https://api.openai.com/v1'
     ).replace(/\/+$/, '');
 
-    const apiKey =
-      providerConfig?.apiKey ||
-      clientHeaders.get('authorization')?.replace(/^Bearer\s+/i, '') ||
-      (typeof process !== 'undefined' ? process.env.OPENAI_API_KEY : '');
+    const apiKey = resolveProviderApiKey({
+      provider: 'openai',
+      config,
+      clientHeaders,
+      envKey: 'OPENAI_API_KEY',
+      specificHeaderNames: ['x-openai-api-key'],
+    });
 
     const payload = {
       ...body,

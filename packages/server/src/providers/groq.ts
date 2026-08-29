@@ -1,4 +1,5 @@
 import type { ProviderAdapter, ProviderRequestOptions } from './types.js';
+import { resolveProviderApiKey } from './utils.js';
 
 export class GroqAdapter implements ProviderAdapter {
   readonly name = 'groq' as const;
@@ -11,11 +12,13 @@ export class GroqAdapter implements ProviderAdapter {
       providerConfig?.baseUrl || 'https://api.groq.com/openai/v1'
     ).replace(/\/+$/, '');
 
-    const apiKey =
-      providerConfig?.apiKey ||
-      clientHeaders.get('x-groq-api-key') ||
-      clientHeaders.get('authorization')?.replace(/^Bearer\s+/i, '') ||
-      (typeof process !== 'undefined' ? process.env.GROQ_API_KEY : '');
+    const apiKey = resolveProviderApiKey({
+      provider: 'groq',
+      config,
+      clientHeaders,
+      envKey: 'GROQ_API_KEY',
+      specificHeaderNames: ['x-groq-api-key'],
+    });
 
     const payload = {
       ...body,

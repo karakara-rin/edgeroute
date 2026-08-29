@@ -138,6 +138,30 @@ export default defineConfig({
     // or provider: 'openai', model: 'text-embedding-3-small'
   },
 
+  // Sub-millisecond Semantic Cache (In-Memory, Cloudflare KV, or Upstash Redis)
+  cache: {
+    enabled: true,
+    threshold: 0.95,
+    ttl: 3600,
+  },
+
+  // Proxy Client Authentication & Authorization
+  auth: {
+    apiKeys: ['sk-proxy-admin-key'],
+  },
+
+  // Sliding Window Rate Limiting
+  rateLimit: {
+    maxRequests: 100,
+    windowMs: 60_000,
+  },
+
+  // Security Guards (CORS, Max Payload Size)
+  security: {
+    cors: true,
+    maxBodySize: 10 * 1024 * 1024,
+  },
+
   // Defined routing targets
   routes: [
     {

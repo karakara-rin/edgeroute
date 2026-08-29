@@ -4,6 +4,7 @@ import {
   type SemanticCacheManager,
   EdgeRouteEngine,
   SemanticClassifier,
+  estimateMessagesTokens,
 } from '@edgeroute/core';
 import { dispatchProviderRequest } from './providers/index.js';
 import {
@@ -11,6 +12,11 @@ import {
   createCachedStream,
   createSafeStream,
 } from './streaming.js';
+import {
+  createAuthMiddleware,
+  createRateLimitMiddleware,
+  createSecurityMiddlewares,
+} from './middleware/index.js';
 
 export interface ChatCompletionToolCall {
   id: string;
@@ -27,6 +33,7 @@ export interface ChatCompletionMessage {
   tool_calls?: ChatCompletionToolCall[];
   tool_call_id?: string;
   name?: string;
+  [key: string]: unknown;
 }
 
 export interface ChatCompletionTool {
@@ -104,6 +111,62 @@ export function extractUserPrompt(messages: ChatCompletionMessage[]): string {
   return typeof last.content === 'string' ? last.content : JSON.stringify(last.content);
 }
 
+/**
+ * Extracts a contextual prompt string from OpenAI messages array.
+ * If the conversation is a single user message with no system prompt, returns the plain user prompt.
+ * If multi-turn history or system/developer messages exist, formats full context with roles
+ * to prevent semantic cache collisions between different conversation contexts.
+ */
+export function extractPromptContext(messages: ChatCompletionMessage[]): string {
+  if (!messages || !Array.isArray(messages) || messages.length === 0) {
+    return '';
+  }
+
+  // Simple single user turn with no prior context or system prompt
+  if (messages.length === 1 && (messages[0]?.role === 'user' || !messages[0]?.role)) {
+    const msg = messages[0]!;
+    if (typeof msg.content === 'string') return msg.content;
+    if (Array.isArray(msg.content)) {
+      const textParts = msg.content
+        .filter((p) => p && typeof p === 'object' && p.type === 'text' && typeof p.text === 'string')
+        .map((p) => p.text as string);
+      return textParts.join('\n');
+    }
+  }
+
+  // Multi-turn or system-prompt enriched conversation: include roles and contents
+  const parts: string[] = [];
+  for (const msg of messages) {
+    const role = msg.role || 'user';
+    let text = '';
+    if (typeof msg.content === 'string') {
+      text = msg.content;
+    } else if (Array.isArray(msg.content)) {
+      text = msg.content
+        .filter((p) => p && typeof p === 'object' && p.type === 'text' && typeof p.text === 'string')
+        .map((p) => p.text as string)
+        .join('\n');
+    } else if (msg.content) {
+      text = JSON.stringify(msg.content);
+    }
+
+    if (msg.tool_calls && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+      const toolCallSummary = JSON.stringify(msg.tool_calls);
+      text = text ? `${text}\n${toolCallSummary}` : toolCallSummary;
+    }
+
+    if (text) {
+      parts.push(`[${role}] ${text}`);
+    }
+  }
+
+  if (parts.length > 0) {
+    return parts.join('\n');
+  }
+
+  return extractUserPrompt(messages);
+}
+
 export function createRouterRoutes(
   configOrEngine: EdgeRouteConfig | EdgeRouteEngine,
   classifierOrEngine?: SemanticClassifier | EdgeRouteEngine,
@@ -129,7 +192,23 @@ export function createRouterRoutes(
 
   const app = new Hono();
 
-  // Health check endpoint
+  // 1. Security Middlewares (CORS & Body limits)
+  const securityMiddlewares = createSecurityMiddlewares(config.security);
+  for (const mw of securityMiddlewares) {
+    app.use('*', mw);
+  }
+
+  // 2. Rate Limiting Middleware (applied globally across API paths)
+  if (config.rateLimit) {
+    app.use('/v1/*', createRateLimitMiddleware(config.rateLimit));
+  }
+
+  // 3. Proxy Authentication Middleware (protects /v1/* endpoints)
+  if (config.auth) {
+    app.use('/v1/*', createAuthMiddleware(config.auth));
+  }
+
+  // Health check endpoint (public)
   app.get('/health', (c) => {
     return c.json({
       status: 'ok',
@@ -162,7 +241,8 @@ export function createRouterRoutes(
       return c.json({ error: { message: 'Invalid JSON request body' } }, 400);
     }
 
-    const prompt = extractUserPrompt(body.messages || []);
+    const prompt = extractPromptContext(body.messages || []);
+    const promptTokens = estimateMessagesTokens(body.messages || []);
     const reqHeaders = c.req.raw.headers;
 
     const cacheControlHeader = reqHeaders.get('cache-control') || '';
@@ -265,6 +345,7 @@ export function createRouterRoutes(
               fullResponse.usage as any,
             );
           },
+          { promptTokens, prompt },
         );
 
         return new Response(capturedStream, {

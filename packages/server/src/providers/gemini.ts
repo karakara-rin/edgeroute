@@ -1,4 +1,5 @@
 import type { ProviderAdapter, ProviderRequestOptions } from './types.js';
+import { resolveProviderApiKey } from './utils.js';
 
 export class GeminiAdapter implements ProviderAdapter {
   readonly name = 'gemini' as const;
@@ -12,11 +13,13 @@ export class GeminiAdapter implements ProviderAdapter {
       'https://generativelanguage.googleapis.com/v1beta/openai'
     ).replace(/\/+$/, '');
 
-    const apiKey =
-      providerConfig?.apiKey ||
-      clientHeaders.get('x-goog-api-key') ||
-      clientHeaders.get('authorization')?.replace(/^Bearer\s+/i, '') ||
-      (typeof process !== 'undefined' ? process.env.GEMINI_API_KEY : '');
+    const apiKey = resolveProviderApiKey({
+      provider: 'gemini',
+      config,
+      clientHeaders,
+      envKey: 'GEMINI_API_KEY',
+      specificHeaderNames: ['x-goog-api-key', 'x-gemini-api-key'],
+    });
 
     const payload = {
       ...body,
