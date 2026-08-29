@@ -206,6 +206,8 @@ export interface RouteEngineExecutionResult<T = any> {
   actualProvider: ProviderType;
   retriedWithFallback: boolean;
   response?: T;
+  ok?: boolean;
+  status?: number;
   usage?: {
     prompt_tokens?: number;
     completion_tokens?: number;

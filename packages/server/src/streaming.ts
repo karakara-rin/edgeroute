@@ -157,6 +157,60 @@ export function createCachedStream(
 }
 
 /**
+ * Wraps an upstream ReadableStream with error handling so that if an error occurs
+ * during streaming (Mid-stream error), an SSE error payload is safely delivered
+ * to the client before closing the stream, avoiding silent disconnects or hangs.
+ */
+export function createSafeStream(
+  upstreamStream: ReadableStream<Uint8Array>,
+  model: string,
+): ReadableStream<Uint8Array> {
+  const reader = upstreamStream.getReader();
+
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            controller.close();
+            break;
+          }
+          controller.enqueue(value);
+        }
+      } catch (err: any) {
+        console.error(
+          `[EdgeRoute/Stream] Mid-stream error encountered on model "${model}":`,
+          err,
+        );
+        try {
+          const errorMessage = err?.message || 'Upstream stream interrupted unexpectedly';
+          const errorPayload = {
+            error: {
+              message: `[EdgeRoute] Stream interrupted: ${errorMessage}`,
+              type: 'stream_error',
+              code: 500,
+              model,
+            },
+          };
+          controller.enqueue(
+            textEncoder.encode(`data: ${JSON.stringify(errorPayload)}\n\n`),
+          );
+          controller.enqueue(textEncoder.encode('data: [DONE]\n\n'));
+        } catch {
+          // Ignore if controller is already closed
+        } finally {
+          controller.close();
+        }
+      }
+    },
+    async cancel(reason) {
+      await reader.cancel(reason);
+    },
+  });
+}
+
+/**
  * Tees an upstream SSE stream so the client receives chunks immediately without lag,
  * while asynchronously accumulating the full response payload (including text & tool calls)
  * to save into semantic cache.
@@ -166,7 +220,8 @@ export function captureAndCacheStream(
   model: string,
   onComplete: (fullResponse: Record<string, unknown>) => Promise<void> | void,
 ): ReadableStream<Uint8Array> {
-  const [clientStream, cacheStream] = upstreamStream.tee();
+  const safeStream = createSafeStream(upstreamStream, model);
+  const [clientStream, cacheStream] = safeStream.tee();
 
   // Process cacheStream in background
   (async () => {
@@ -303,10 +358,14 @@ export function captureAndCacheStream(
           };
         }
 
-        await onComplete(fullResponse);
+        try {
+          await onComplete(fullResponse);
+        } catch (saveErr) {
+          console.warn('[EdgeRoute/Stream] Error saving stream response to cache:', saveErr);
+        }
       }
-    } catch {
-      // Non-blocking catch on background caching
+    } catch (err) {
+      console.warn('[EdgeRoute/Stream] Background cache stream processing ended with error:', err);
     }
   })();
 
