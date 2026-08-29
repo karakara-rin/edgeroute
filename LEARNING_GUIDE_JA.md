@@ -21,6 +21,7 @@
 6. [設定ファイルの書き方 & チューニング方法](#6-設定ファイルの書き方--チューニング方法)
 7. [ローカルでの動かし方 & テスト方法](#7-ローカルでの動かし方--テスト方法)
 8. [セキュリティ・認証・分散運用のアーキテクチャ](#8-セキュリティ認証分散運用のアーキテクチャ)
+9. [@edgeroute/cli によるオフラインデバッグ & 自動評価](#9-edgeroutecli-によるオフラインデバッグ--自動評価)
 
 ---
 
@@ -322,4 +323,55 @@ export default defineConfig({
   routes: [/* ... */],
 });
 ```
+
+---
+
+## 9. @edgeroute/cli によるオフラインデバッグ & 自動評価
+
+`@edgeroute/cli` は、プロキシサーバーを起動することなく、ローカル環境でルーティング精度のデバッグ・データセット評価・ベクトル事前ビルドを行うための開発者向けツールキットです。
+
+### ① 即座にルーティング判定をテスト (`edgeroute test <prompt>`)
+
+任意のプロンプト文字列が「どのルールに該当し、どのモデルに送られ、コストが幾ら安くなるか」を 1 秒でターミナルに出力します。
+
+```bash
+# 基本実行
+npx edgeroute test "フランスの首都はどこですか？"
+
+# 詳細モード (候補全ルートのスコア、トークン数見積もり、複雑度特徴量を表示)
+npx edgeroute test "Rustで分散KVSを実装するコードを書いて" --verbose
+
+# CI連携・JSON出力
+npx edgeroute test "Hello, summarize this text" --json
+```
+
+**出力例:**
+```text
+⚡ Routing Decision for: "フランスの首都はどこですか？"
+──────────────────────────────────────────────────
+• Decision:   Tier 2 (Semantic Match)
+• Matched:    "simple-tasks" (Score: 0.892, Threshold: 0.78)
+• Target:     gpt-4o-mini (Provider: openai)
+• Cost Est.:  $0.00003 (Default: $0.00050 -> Saved 94.0%)
+• Latency:    0.34ms (Local vector math)
+```
+
+### ② 過去ログによるコスト削減シミュレーション (`edgeroute eval`)
+
+過去のリクエストログ（JSONL / JSON / CSV）を流し込み、モデル振り分け率や削減コストをシミュレートします。
+`--tune` オプションを指定すると、閾値を自動スイープして「90%以上の精度を保ちつつ最大コスト削減できる推奨閾値」を探索します。
+
+```bash
+npx edgeroute eval --dataset ./prompts.jsonl --tune --threshold-range 0.5:0.95:0.05
+```
+
+### ③ オフラインベクトル事前生成 (`edgeroute build-embeddings`)
+
+ルート例文（`examples`）の埋め込みベクトルをオフラインで静的 JSON/TS ファイル（`router.embeddings.json`）に事前書き出しします。
+これにより、Edge ランタイム起動時のベクトル計算オーバーヘッドを **0ms（コールドスタートゼロ）** にできます。
+
+```bash
+npx edgeroute build-embeddings --output router.embeddings.json
+```
+
 
