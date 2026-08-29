@@ -3,6 +3,8 @@
  * Computes query complexity score (0.0 to 1.0) in < 0.2ms with zero external dependencies.
  */
 
+import { estimateTokens } from './tokens.js';
+
 export interface ComplexityFeatures {
   /** Code presence, syntax structure, and programming keywords (0.0 - 1.0) */
   codeDensity: number;
@@ -120,8 +122,7 @@ export function extractComplexityFeatures(prompt: string): ComplexityFeatures {
   }
 
   const charCount = prompt.length;
-  // Estimate tokens (~4 characters per token for English/code, ~1.5 for CJK)
-  const estimatedTokens = Math.max(1, Math.round(charCount / 3.2));
+  const estimatedTokens = estimateTokens(prompt);
 
   // Limit scan text to avoid event-loop blocking on large prompts
   const scanText = charCount > MAX_SCAN_CHARS ? prompt.slice(0, MAX_SCAN_CHARS) : prompt;

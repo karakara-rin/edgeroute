@@ -1,4 +1,5 @@
 import type { EmbeddingProvider, Vector } from './types.js';
+import { fnv1a32 } from '../hash.js';
 
 /**
  * Ultra-fast, zero-dependency, zero-API lexical hashing vectorizer for Edge runtimes.
@@ -40,13 +41,13 @@ export class HashEmbeddingProvider implements EmbeddingProvider {
     const words = normalized.split(/[\s,.;:!?()[\]{}"'`/\\|<>+=-]+/).filter(Boolean);
     for (let i = 0; i < words.length; i++) {
       const word = words[i]!;
-      const hash1 = this.hashString(word);
+      const hash1 = fnv1a32(word);
       const idx1 = Math.abs(hash1) % this.dimensions;
       vector[idx1] += 2.0;
 
       if (i < words.length - 1) {
         const bigram = `${word}_${words[i + 1]}`;
-        const hash2 = this.hashString(bigram);
+        const hash2 = fnv1a32(bigram);
         const idx2 = Math.abs(hash2) % this.dimensions;
         vector[idx2] += 1.5;
       }
@@ -55,7 +56,7 @@ export class HashEmbeddingProvider implements EmbeddingProvider {
     // 2. Character 3-grams & 4-grams (works effectively for non-spaced languages like Japanese, and code)
     for (let i = 0; i < normalized.length - 2; i++) {
       const charTri = normalized.slice(i, i + 3);
-      const hashTri = this.hashString(charTri);
+      const hashTri = fnv1a32(charTri);
       const idxTri = Math.abs(hashTri) % this.dimensions;
       vector[idxTri] += 1.0;
     }
@@ -74,18 +75,6 @@ export class HashEmbeddingProvider implements EmbeddingProvider {
     }
 
     return vector;
-  }
-
-  /**
-   * Fast 32-bit FNV-1a hash algorithm
-   */
-  private hashString(str: string): number {
-    let hash = 0x811c9dc5;
-    for (let i = 0; i < str.length; i++) {
-      hash ^= str.charCodeAt(i);
-      hash = Math.imul(hash, 0x01000193);
-    }
-    return hash;
   }
 }
 

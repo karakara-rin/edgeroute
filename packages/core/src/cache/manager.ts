@@ -4,6 +4,7 @@ import type { EmbeddingProvider, Vector } from '../embeddings/types.js';
 import type { CacheConfig, CacheConfigInput, ModelPricing } from '../types.js';
 import { InMemoryCacheStore } from './memory.js';
 import type { CacheEntry, CacheSimilarityMatch, CacheStore } from './types.js';
+import { fastHexHash } from '../hash.js';
 
 export interface CacheLookupResult {
   hit: boolean;
@@ -24,18 +25,6 @@ export interface SaveCacheParams {
     total_tokens?: number;
   };
   metadata?: Record<string, unknown>;
-}
-
-/**
- * Fast 32-bit FNV-1a hex string hash for generating deterministic cache entry IDs
- */
-function fastHash(str: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < str.length; i++) {
-    hash ^= str.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
 export class SemanticCacheManager {
@@ -127,7 +116,7 @@ export class SemanticCacheManager {
     }
 
     // Deterministic ID preventing duplicate key accumulation
-    const id = `${params.model}:${fastHash(trimmedPrompt)}`;
+    const id = `${params.model}:${fastHexHash(trimmedPrompt)}`;
 
     // In-flight deduplication: return active save promise if already pending for this entry
     const existing = this.pendingWrites.get(id);

@@ -17,8 +17,10 @@ export interface UpstreamResponse {
 }
 
 /**
- * Dispatches the chat completion request to the appropriate upstream provider,
+ * Low-level standalone dispatcher for chat completion requests to upstream providers
  * with automatic cross-provider fallback retry on errors or rate limits.
+ *
+ * Note: For full routing, caching, and telemetry, use `createEdgeRouteServer()` or `EdgeRouteEngine`.
  */
 export async function forwardChatCompletion(
   options: UpstreamRequestOptions,

@@ -126,7 +126,7 @@ describe('ComplexityScorer performance & latency', () => {
     const duration = performance.now() - start;
 
     expect(result.features.characterCount).toBe(largePrompt.length);
-    expect(result.features.estimatedTokens).toBeGreaterThan(5000);
+    expect(result.features.estimatedTokens).toBeGreaterThan(4500);
     // Bounded scan ensures execution is well under 2ms even on 20k char text
     expect(duration).toBeLessThan(5);
   });

@@ -114,31 +114,23 @@ export class EdgeRouteLanguageModel implements LanguageModelV1 {
         stream: false,
       },
       async (modelToCall) => {
-        try {
-          targetModelInstance = await this.resolveModel(modelToCall);
-          const generated = await targetModelInstance.doGenerate(options);
-          return {
-            response: generated,
-            ok: true,
-            status: 200,
-            actualModel: modelToCall,
-            actualProvider: 'openai',
-            usage: {
-              prompt_tokens: generated.usage?.promptTokens,
-              completion_tokens: generated.usage?.completionTokens,
-              total_tokens:
-                (generated.usage?.promptTokens ?? 0) +
-                (generated.usage?.completionTokens ?? 0),
-            },
-            headers: (generated.rawResponse?.headers ?? {}) as Record<string, string>,
-          };
-        } catch (err) {
-          console.warn(
-            `[EdgeRoute] Error invoking target model "${modelToCall}". Falling back to defaultModel "${this.config.defaultModel}". Error:`,
-            err,
-          );
-          throw err;
-        }
+        targetModelInstance = await this.resolveModel(modelToCall);
+        const generated = await targetModelInstance.doGenerate(options);
+        return {
+          response: generated,
+          ok: true,
+          status: 200,
+          actualModel: modelToCall,
+          actualProvider: 'openai',
+          usage: {
+            prompt_tokens: generated.usage?.promptTokens,
+            completion_tokens: generated.usage?.completionTokens,
+            total_tokens:
+              (generated.usage?.promptTokens ?? 0) +
+              (generated.usage?.completionTokens ?? 0),
+          },
+          headers: (generated.rawResponse?.headers ?? {}) as Record<string, string>,
+        };
       },
     );
 
