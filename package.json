@@ -5,7 +5,8 @@
   "description": "Edge-Ready AI Semantic Router & Evaluation Framework",
   "type": "module",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "examples/*"
   ],
   "scripts": {
     "build": "npm run build --workspace=@edgeroute/core && npm run build --workspace=@edgeroute/server && npm run build --workspace=@edgeroute/ai && npm run build --workspace=@edgeroute/cli",

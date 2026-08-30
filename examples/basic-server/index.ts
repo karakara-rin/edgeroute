@@ -2,7 +2,7 @@ import { createEdgeRouteServer } from '@edgeroute/server';
 import { defineConfig } from '@edgeroute/core';
 
 const config = defineConfig({
-  defaultModel: 'gpt-4o',
+  defaultModel: 'gpt-5.6-sol',
   providers: {
     openai: {
       apiKey: process.env.OPENAI_API_KEY,
@@ -15,7 +15,7 @@ const config = defineConfig({
   routes: [
     {
       name: 'simple-tasks',
-      targetModel: 'gpt-4o-mini',
+      targetModel: 'gpt-5.6-luna',
       threshold: 0.65,
       rules: {
         maxCharacters: 250,
@@ -30,7 +30,7 @@ const config = defineConfig({
     },
     {
       name: 'complex-reasoning',
-      targetModel: 'gpt-4o',
+      targetModel: 'gpt-5.6-sol',
       threshold: 0.7,
       examples: [
         'Implement an AST parser and compiler pipeline in Rust',

@@ -9,12 +9,12 @@ export interface PresetDefinition {
 export const PRESET_COST_SAVER: PresetDefinition = {
   id: 'cost-saver',
   name: 'Cost Saver (Default)',
-  description: 'Route casual chat/translations to gpt-4o-mini/haiku, complex queries to gpt-4o/sonnet + semantic cache',
+  description: 'Route casual chat/translations to gpt-5.6-luna/haiku-4-5, complex queries to gpt-5.6-sol + semantic cache',
   configContent: `import { defineConfig } from '@edgeroute/core';
 
 export default defineConfig({
   // Default fallback model (high capability / frontier reasoning model)
-  defaultModel: 'gpt-4o',
+  defaultModel: 'gpt-5.6-sol',
 
   // Providers configuration (read from environment variables)
   providers: {
@@ -42,7 +42,7 @@ export default defineConfig({
   routes: [
     {
       name: 'simple-tasks',
-      targetModel: 'gpt-4o-mini',
+      targetModel: 'gpt-5.6-luna',
       threshold: 0.78,
 
       // Tier 1: Fast-path zero-latency regex matching
@@ -65,7 +65,7 @@ export default defineConfig({
     },
     {
       name: 'fast-haiku-translation',
-      targetModel: 'claude-3-5-haiku-20241022',
+      targetModel: 'claude-haiku-4-5',
       threshold: 0.80,
       rules: {
         patterns: [
@@ -90,12 +90,12 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here
 export const PRESET_CODING_AGENT: PresetDefinition = {
   id: 'coding-agent',
   name: 'Coding Agent',
-  description: 'Fast syntax & refactoring via Groq Llama 3.3, deep architecture & tool use via Claude 3.5 Sonnet',
+  description: 'Fast syntax & refactoring via Groq Llama 3.3, deep architecture & tool use via Claude Sonnet 5',
   configContent: `import { defineConfig } from '@edgeroute/core';
 
 export default defineConfig({
   // Default fallback model for complex system design, reasoning, and multi-step tool use
-  defaultModel: 'claude-3-5-sonnet-20241022',
+  defaultModel: 'claude-sonnet-5',
 
   // Providers configuration
   providers: {
@@ -121,7 +121,7 @@ export default defineConfig({
   routes: [
     {
       name: 'syntax-and-refactor-fast',
-      targetModel: 'groq/llama-3.3-70b-versatile',
+      targetModel: 'llama-3.3-70b-versatile',
       threshold: 0.75,
       rules: {
         patterns: [
@@ -138,7 +138,7 @@ export default defineConfig({
     },
     {
       name: 'architecture-and-tools',
-      targetModel: 'claude-3-5-sonnet-20241022',
+      targetModel: 'claude-sonnet-5',
       threshold: 0.85,
       examples: [
         'Design a distributed rate-limiting algorithm using Redis and token bucket',
@@ -163,7 +163,7 @@ export const PRESET_MINIMAL_CACHE_ONLY: PresetDefinition = {
 
 export default defineConfig({
   // Forward non-cached queries to your primary LLM
-  defaultModel: 'gpt-4o',
+  defaultModel: 'gpt-5.6-sol',
 
   providers: {
     openai: {
