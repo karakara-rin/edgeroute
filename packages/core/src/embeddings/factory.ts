@@ -25,6 +25,7 @@ async function tryCreateTransformersProvider(
   model?: string,
 ): Promise<EmbeddingProvider | null> {
   try {
+    await import('@huggingface/transformers');
     const { TransformersEmbeddingProvider } = await import('./transformers.js');
     return new TransformersEmbeddingProvider({ model });
   } catch {

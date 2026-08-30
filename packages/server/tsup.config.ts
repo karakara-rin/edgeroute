@@ -7,4 +7,10 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   treeshake: true,
+  external: [
+    '@edgeroute/core',
+    '@huggingface/transformers',
+    'onnxruntime-node',
+    '@upstash/redis',
+  ],
 });

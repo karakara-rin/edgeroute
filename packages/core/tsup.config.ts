@@ -7,4 +7,10 @@ export default defineConfig({
   clean: true,
   sourcemap: true,
   treeshake: true,
+  external: [
+    '@huggingface/transformers',
+    'onnxruntime-node',
+    '@upstash/redis',
+    '@cloudflare/workers-types',
+  ],
 });
