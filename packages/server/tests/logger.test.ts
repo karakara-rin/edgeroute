@@ -95,6 +95,7 @@ describe('ServerLogger Unit & Integration Tests', () => {
       providers: {
         openai: { apiKey: 'test-key' },
       },
+      embedding: { provider: 'hash' },
       routes: [
         {
           name: 'simple-qa',
@@ -137,6 +138,7 @@ describe('ServerLogger Unit & Integration Tests', () => {
     const config = defineConfig({
       defaultModel: 'gpt-4o',
       providers: { openai: { apiKey: 'test-key' } },
+      embedding: { provider: 'hash' },
       cache: { enabled: true, threshold: 0.9 },
       routes: [
         {
