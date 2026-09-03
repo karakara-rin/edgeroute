@@ -15,6 +15,7 @@ export * from './streaming.js';
 export * from './providers/index.js';
 export * from './middleware/index.js';
 export * from './handlers/index.js';
+export * from './dashboard/index.js';
 export * from './utils/prompt.js';
 
 export interface CreateEdgeRouteServerOptions {

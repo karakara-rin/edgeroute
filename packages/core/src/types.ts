@@ -31,6 +31,9 @@ export const ProviderTypeSchema = z.enum([
   'anthropic',
   'gemini',
   'groq',
+  'ollama',
+  'deepseek',
+  'azure',
   'custom',
 ]);
 
@@ -79,6 +82,8 @@ export const ProviderConfigSchema = z.object({
   baseUrl: z.string().optional(),
   organization: z.string().optional(),
   apiVersion: z.string().optional(),
+  resourceName: z.string().optional(),
+  deploymentName: z.string().optional(),
 });
 
 export type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
@@ -291,6 +296,18 @@ export interface RouteEngineExecutionResult<T = unknown> {
   savedCostUSD?: number;
   headers: Record<string, string>;
   queryVector?: number[];
+}
+
+export interface PromptEvaluationResult {
+  matchedRoute: string;
+  targetModel: string;
+  defaultModel: string;
+  tier: string;
+  score: number;
+  estimatedSavingsPercent: number;
+  estimatedSavingsUSD: number;
+  promptTokens: number;
+  latencyMs: number;
 }
 
 

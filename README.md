@@ -1,10 +1,8 @@
 <div align="center">
 
-# ⚡️ EdgeRoute
+# EdgeRoute
 
-**Edge-Ready AI Semantic Router & Dynamic Cost-Optimizing LLM Proxy**
-
-Zero-latency rule matching + in-memory vector cosine similarity + OpenAI API drop-in compatibility.
+**Ultra-low latency AI semantic router and cost-optimizing LLM proxy for edge and serverless runtimes.**
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.6-blue.svg)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -14,25 +12,27 @@ Zero-latency rule matching + in-memory vector cosine similarity + OpenAI API dro
 
 ---
 
-## 🌟 Why EdgeRoute?
+## Overview
 
-Most LLM routers are Python-heavy, slow to boot, and impossible to deploy directly to the edge (e.g. Cloudflare Workers, Fastly, Deno Deploy).
+Most existing LLM semantic routing libraries are Python-heavy, have significant boot/runtime overhead, and cannot be deployed directly onto edge platforms (such as Cloudflare Workers, Fastly Compute, or Vercel Edge Functions).
 
-**EdgeRoute** is designed from the ground up for ultra-low latency edge environments:
+**EdgeRoute** is a lightweight, edge-first TypeScript routing engine and reverse proxy designed for low-latency production environments:
 
-- ⚡ **2-Tier Hybrid Routing**:
-  - **Tier 1 (Fast-path)**: Regex & token constraints evaluated in **0.00ms**.
-  - **Tier 2 (Semantic-path)**: In-memory cosine similarity against pre-embedded route vectors (**< 0.5ms**).
-- 🚀 **Sub-Millisecond Semantic Cache ($0 Cost Immediate Hits)**: In-memory & Cloudflare KV caching layer that serves semantically equivalent past prompts (cosine similarity > threshold) with **< 1ms latency**, $0 API cost, and OpenAI-compatible SSE streaming support.
-- 🌐 **Multi-Provider Support**: Seamlessly route between **Anthropic** (`claude-*`), **Google Gemini** (`gemini-*`), **Groq** (`llama-*`, `mixtral-*`, `deepseek-*`), and **OpenAI** (`gpt-*`, `o1`, `o3-mini`) using standard OpenAI client SDKs.
-- 🧠 **True Semantic Embedding (Auto-Detected)**: Runtime auto-detection selects the best embedding provider — **Transformers.js** (ONNX `all-MiniLM-L6-v2`) for Node.js/Bun, **Cloudflare Workers AI** (`bge-small-en-v1.5`) for edge — with a zero-dependency lexical hash fallback.
-- 🔄 **Drop-in OpenAI Compatibility**: Works instantly with OpenAI SDK, Vercel AI SDK, LangChain, and LlamaIndex simply by pointing `baseURL` to `http://localhost:3000/v1`.
-- 🛡️ **Cross-Provider Automatic Failover**: Automatic retry against `defaultModel` (even across different AI providers) on downstream `429` (Rate Limit) or `5xx` server errors.
-- 📊 **Real-time Cost Diagnostics**: Injects `X-EdgeRoute-Cache`, `X-EdgeRoute-Cost-Saved-USD`, `X-EdgeRoute-Provider`, and `X-EdgeRoute-Matched-Route` headers into responses.
+- **Multi-Tier Routing Pipeline**:
+  - **Tier 1 (Fast-path)**: Regex, keyword heuristics, and character bounds evaluated with near-zero overhead (`< 0.05ms`).
+  - **Tier 2 (Semantic-path)**: In-memory vector cosine similarity against pre-computed route embeddings (`< 0.5ms`).
+- **Semantic Caching Layer**: In-memory, Cloudflare KV, and Redis-backed cache serving semantically equivalent queries above a configurable similarity threshold, with full OpenAI-compatible SSE streaming support.
+- **Embedded Zero-DB Web Dashboard**: Instant control plane at `/dashboard` featuring real-time cache hit rates, cumulative cost savings, edge latency metrics, recent request logs, and an interactive prompt route simulator.
+- **Multi-Provider & Local Inference**: Route seamlessly across **OpenAI** (`gpt-*`, `o1`, `o3-mini`), **Anthropic** (`claude-*`), **Google Gemini** (`gemini-*`), **Groq** (`llama-*`, `mixtral-*`), **DeepSeek** (`deepseek-chat`, `deepseek-reasoner`), **Ollama** (100% free local inference `ollama/*`), and **Azure OpenAI**.
+- **Cross-Provider Tool Calling (Function Calling)**: Full transparent translation of `tools`, `tool_choice`, and multi-turn tool results with SSE streaming between OpenAI, Anthropic, and open-source models.
+- **Zero-Dependency Runtime Auto-Detection**: Dynamically resolves embedding backends — **Cloudflare Workers AI** (`bge-small-en-v1.5`) on the edge, **Transformers.js** (`all-MiniLM-L6-v2` ONNX) on Node.js/Bun, with zero-dependency lexical fallback.
+- **Drop-in OpenAI Compatibility**: Integrates with OpenAI SDK, Vercel AI SDK, LangChain, and LlamaIndex simply by pointing `baseURL` to the proxy.
+- **Cross-Provider Failover**: Automatic retry against `defaultModel` across different providers on downstream `429` (Rate Limit) or `5xx` server errors.
+- **Telemetry & Cost Accounting**: Injects `X-EdgeRoute-Cache`, `X-EdgeRoute-Cost-Saved-USD`, `X-EdgeRoute-Provider`, and `X-EdgeRoute-Matched-Route` diagnostic headers.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```mermaid
 flowchart TD
@@ -40,12 +40,12 @@ flowchart TD
     
     subgraph Semantic Cache Layer
         Proxy --> CacheCheck{Semantic Cache Hit?}
-        CacheCheck -- Hit (Cosine Sim >= 0.95) --> ReturnCache[Instant Cache Response < 1ms / $0]
+        CacheCheck -- Hit (Cosine Sim >= 0.95) --> ReturnCache[Cache Response < 1ms]
     end
 
     subgraph Core Routing Engine
         CacheCheck -- Miss --> FastPath{Fast-Path Match?}
-        FastPath -- Match Found (0ms) --> TargetModel[Target Model]
+        FastPath -- Match Found --> TargetModel[Target Model]
         
         FastPath -- No Match --> VectorCalc[Local Vector Calculation]
         VectorCalc --> CosineSim[Cosine Similarity vs In-Memory Examples]
@@ -62,7 +62,7 @@ flowchart TD
     Dispatcher -->|Gemini| Gemini[Gemini OpenAI-Compat API]
     Dispatcher -->|Groq| Groq[Groq LPU Fast Inference]
 
-    OpenAI --> Return[Return OpenAI Response + Diagnostic Headers]
+    OpenAI --> Return[Return Response + Diagnostic Headers]
     Anthropic --> Return
     Gemini --> Return
     Groq --> Return
@@ -73,13 +73,11 @@ flowchart TD
 
 ---
 
-## 🚀 Quickstart
+## Quickstart
 
-Choose your deployment mode below:
+### Option A: Cloudflare Workers
 
-### 🌟 Option A: Cloudflare Workers ($0/mo Edge Deployment)
-
-Run a production LLM proxy worldwide at **$0 infrastructure cost** with Cloudflare Workers (100k req/day free), Workers AI ($0 free neural embeddings), and Cloudflare KV (sub-millisecond distributed cache).
+Run a production LLM proxy globally with Cloudflare Workers, Workers AI (for neural embeddings), and Cloudflare KV (for distributed cache).
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/karakara-rin/edgeroute/tree/main/examples/cloudflare-workers)
 
@@ -88,34 +86,32 @@ Run a production LLM proxy worldwide at **$0 infrastructure cost** with Cloudfla
 git clone https://github.com/karakara-rin/edgeroute.git
 cd edgeroute/examples/cloudflare-workers && npm install
 
-# 2. Create your free KV Cache namespace
+# 2. Create KV Cache namespace
 npx wrangler kv namespace create CACHE_KV
-# (Paste the generated id into wrangler.jsonc)
 
-# 3. Configure your API key secrets & deploy in 1 click
+# 3. Configure secrets & deploy
 npx wrangler secret put OPENAI_API_KEY
 npm run deploy
 ```
 
 ---
 
-### 🐳 Option B: Docker & docker-compose (Self-Hosted)
+### Option B: Docker & docker-compose
 
-Run EdgeRoute with Docker anywhere (VPS, Fly.io, Render, AWS, GCP, or local machine) with zero installation:
+Run EdgeRoute in containerized environments (Fly.io, Render, AWS ECS, or local machine):
 
 ```bash
-# 1. Copy environment template
+# 1. Configure environment
 cp .env.example .env
-# Edit .env with your OPENAI_API_KEY / ANTHROPIC_API_KEY
 
 # 2. Launch with docker-compose
 docker-compose up -d
 
-# 3. EdgeRoute is ready at http://localhost:3000
+# 3. Verify health
 curl http://localhost:3000/health
 ```
 
-Or run directly with Docker CLI:
+Or build directly:
 
 ```bash
 docker build -t edgeroute .
@@ -124,7 +120,7 @@ docker run -d -p 3000:3000 -e OPENAI_API_KEY="sk-..." edgeroute
 
 ---
 
-### 💻 Option C: Node.js / TypeScript Proxy Server
+### Option C: Node.js / TypeScript Proxy Server
 
 #### 1. Installation
 
@@ -132,16 +128,16 @@ docker run -d -p 3000:3000 -e OPENAI_API_KEY="sk-..." edgeroute
 npm install @edgeroute/core @edgeroute/server
 ```
 
-#### 2. Configure Router (`router.config.ts`)
+#### 2. Configuration (`router.config.ts`)
 
 ```typescript
 import { defineConfig } from '@edgeroute/core';
 
 export default defineConfig({
-  // Default large reasoning model for fallback
+  // Default reasoning model for fallback
   defaultModel: 'gpt-5.6-sol',
 
-  // Providers configuration
+  // Provider credentials
   providers: {
     openai: { apiKey: process.env.OPENAI_API_KEY },
     anthropic: { apiKey: process.env.ANTHROPIC_API_KEY },
@@ -149,39 +145,39 @@ export default defineConfig({
     groq: { apiKey: process.env.GROQ_API_KEY },
   },
 
-  // Embedding provider: 'auto' (default) auto-detects the best provider for your runtime
-  //   - Cloudflare Workers → Workers AI (bge-small-en-v1.5, true semantic, $0)
-  //   - Node.js / Bun → Transformers.js (all-MiniLM-L6-v2, true semantic, $0)
-  //   - Fallback → Hash-based lexical matching (zero dependencies, NOT semantic)
-  // Other options: 'transformers', 'workers-ai', 'openai', 'hash'
+  // Embedding backend selection:
+  // 'auto' (default) automatically resolves:
+  // - Cloudflare Workers -> Workers AI (bge-small-en-v1.5)
+  // - Node.js / Bun -> Transformers.js (all-MiniLM-L6-v2)
+  // - Fallback -> Fast lexical hash
   embedding: {
     provider: 'auto',
   },
 
-  // Sub-millisecond Semantic Cache configuration (In-Memory, Cloudflare KV, or Upstash Redis)
+  // Semantic Cache configuration
   cache: {
     enabled: true,
-    threshold: 0.95, // Cosine similarity threshold
+    threshold: 0.95,
     ttl: 3600, // 1 hour TTL
     maxEntries: 1000,
-    maxTemperature: 0.2, // Guardrail: only cache deterministic queries
+    maxTemperature: 0.2, // Only cache deterministic queries
   },
 
-  // Proxy Authentication & Authorization
+  // Proxy Authentication
   auth: {
     apiKeys: [process.env.EDGEROUTE_API_KEY || 'sk-edgeroute-proxy-secret'],
   },
 
-  // Rate Limiting (Sliding Window)
+  // Sliding Window Rate Limiting
   rateLimit: {
     maxRequests: 100,
-    windowMs: 60_000, // 100 requests per minute
+    windowMs: 60_000,
   },
 
-  // Security & Protection Guardrails
+  // Security Guardrails
   security: {
     cors: true,
-    maxBodySize: 5 * 1024 * 1024, // 5MB limit
+    maxBodySize: 5 * 1024 * 1024, // 5MB payload limit
   },
 
   routes: [
@@ -216,7 +212,7 @@ export default defineConfig({
 });
 ```
 
-#### 3. Start the Proxy Server
+#### 3. Initialize Proxy Server
 
 ```typescript
 import { createEdgeRouteServer } from '@edgeroute/server';
@@ -224,31 +220,30 @@ import config from './router.config.js';
 
 const { app } = await createEdgeRouteServer(config);
 
-export default app; // For Cloudflare Workers or Node.js Hono adapter
+export default app;
 ```
 
-#### 4. Use with OpenAI SDK
+#### 4. Consume with OpenAI SDK
 
 ```typescript
 import OpenAI from 'openai';
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
-  baseURL: 'http://localhost:3000/v1', // Point to EdgeRoute
+  baseURL: 'http://localhost:3000/v1',
 });
 
 const response = await client.chat.completions.create({
-  model: 'gpt-5.6-sol', // EdgeRoute will dynamically route or serve from cache!
+  model: 'gpt-5.6-sol', // Dynamically routed or served from cache
   messages: [{ role: 'user', content: 'Hello! How are you?' }],
 });
 ```
 
-
 ---
 
-## ⚡ Next.js & Vercel AI SDK Integration (`@edgeroute/ai`)
+## Next.js & Vercel AI SDK Integration (`@edgeroute/ai`)
 
-EdgeRoute provides a first-class `LanguageModelV1` adapter for the [Vercel AI SDK](https://sdk.vercel.ai/docs). Use `streamText` or `generateText` directly in Next.js Route Handlers without spinning up a separate proxy server.
+EdgeRoute provides a `LanguageModelV1` adapter for the [Vercel AI SDK](https://sdk.vercel.ai/docs), allowing embedded in-process routing without maintaining a standalone proxy server.
 
 ```bash
 npm install @edgeroute/ai @edgeroute/core ai @ai-sdk/openai @ai-sdk/anthropic
@@ -264,7 +259,7 @@ import { anthropic } from '@ai-sdk/anthropic';
 export const runtime = 'edge';
 
 const router = edgeroute({
-  defaultModel: 'gpt-4o-mini',
+  defaultModel: 'gpt-5.6-sol',
   routes: [
     {
       name: 'coding-expert',
@@ -273,14 +268,15 @@ const router = edgeroute({
     },
     {
       name: 'quick-qa',
-      targetModel: 'gpt-4o-mini',
+      targetModel: 'gemini-3.7-flash',
       rules: { maxCharacters: 100 },
     },
   ],
   cache: { enabled: true, threshold: 0.95 },
   models: {
     'claude-3-5-sonnet-20241022': anthropic('claude-3-5-sonnet-20241022'),
-    'gpt-4o-mini': openai('gpt-4o-mini'),
+    'gpt-5.6-sol': openai('gpt-5.6-sol'),
+    'gemini-3.7-flash': openai('gemini-3.7-flash'),
   },
 });
 
@@ -298,91 +294,66 @@ export async function POST(req: Request) {
 
 ---
 
-## 🛠️ CLI & Diagnostic Tools (`@edgeroute/cli`)
+## CLI & Tooling (`@edgeroute/cli`)
 
-EdgeRoute includes a rich CLI for offline routing verification, threshold auto-tuning, and embedding pre-compilation without booting a live proxy server.
+The EdgeRoute CLI supports local development, offline verification, threshold tuning, and embedding pre-compilation.
 
 ```bash
 npm install -g @edgeroute/cli
-# or run via npx / pnpm
+# or run via npx
 npx edgeroute --help
 ```
 
-### 1. Local Dev Proxy Server with Real-Time Feedback (`edgeroute dev`)
+### 1. Local Development Server (`edgeroute dev`)
 
-Start the EdgeRoute proxy server locally with colorful real-time feedback showing routing matches, semantic cache hits, fallback retries, and estimated cost savings:
+Starts the local proxy server with real-time routing diagnostics:
 
 ```bash
-# Start local dev server (default: port 3000)
-npx edgeroute dev
-
-# Custom port and config path
-npx edgeroute dev --port 8080 --config ./router.config.ts
+npx edgeroute dev --port 3000 --config ./router.config.ts
 ```
 
-**Real-Time Terminal Output Example:**
 ```text
-🚀 EdgeRoute Dev Server running!
+EdgeRoute Dev Server running
 ──────────────────────────────────────────────────
-  • Local:   http://localhost:3000
-  • Health:  http://localhost:3000/health
-  • Proxy:   http://localhost:3000/v1/chat/completions
-  • Default: gpt-4o
-  • Routes:  2 configured
+  • Local:     http://localhost:3000
+  • Dashboard: http://localhost:3000/dashboard
+  • Health:    http://localhost:3000/health
+  • Proxy:     http://localhost:3000/v1/chat/completions
+  • Default:   gpt-5.6-sol
+  • Routes:    3 configured
 ──────────────────────────────────────────────────
-
-8:30:15 PM POST /v1/chat/completions 200 (14.2ms)
-  [ROUTE 🎯] Matched "simple-qa" -> gpt-4o-mini (Saved $0.0042 vs gpt-4o)
-
-8:30:18 PM POST /v1/chat/completions 200 (0.3ms)
-  [HIT ⚡ 0.3ms] (Semantic Cache Hit, Saved $0.0050)
-
-8:30:25 PM POST /v1/chat/completions 200 (450.0ms)
-  [FALLBACK 🛡️] Primary model 429 -> Fallback to defaultModel (gpt-4o)
-  [ROUTE 🎯] Matched "simple-qa" -> gpt-4o
 ```
 
-### 2. Instant Prompt Routing Test (`edgeroute test`)
+### 2. Single Prompt Routing Test (`edgeroute test`)
 
-Debug and verify routing tier decisions, similarity scores, selected target model, and cost savings in 1 second directly from your terminal:
+Evaluate routing tiers, similarity scores, and estimated cost differentials directly from the terminal:
 
 ```bash
 # Basic test
 npx edgeroute test "Hello, what is the capital of France?"
 
-# Verbose mode (view candidate route scores, token estimation, and complexity analysis)
+# Detailed breakdown (candidate scores, token estimates, complexity)
 npx edgeroute test "Write a distributed consensus engine in Rust" --verbose
 
-# JSON output for CI / test automation
+# JSON output for CI integration
 npx edgeroute test "Translate this to Japanese" --json
 ```
 
-**Terminal Output Example:**
-```text
-⚡ Routing Decision for: "What is the capital of France?"
-──────────────────────────────────────────────────
-• Decision:   Tier 2 (Semantic Match)
-• Matched:    "general-knowledge" (Score: 0.892, Threshold: 0.80)
-• Target:     gpt-4o-mini (Provider: openai)
-• Cost Est.:  $0.00015 (Default: $0.00500 -> Saved 97.0%)
-• Latency:    0.34ms (Local vector math)
-```
+### 3. Dataset Simulation & Threshold Tuning (`edgeroute eval`)
 
-### 3. Dataset Simulation & Threshold Auto-Tuning (`edgeroute eval`)
-
-Replay historical request logs against your routing configuration to measure cumulative cost savings and find the optimal threshold:
+Replay historical request logs against your routing configuration to measure cumulative cost savings and determine optimal similarity thresholds:
 
 ```bash
-# Evaluate baseline against a dataset
+# Evaluate baseline against dataset
 npx edgeroute eval --dataset ./logs/prompts.jsonl
 
-# Auto-tune threshold range for optimal accuracy/cost balance
+# Sweep threshold range for optimal precision / cost ratio
 npx edgeroute eval --dataset ./logs/prompts.jsonl --tune --threshold-range 0.5:0.95:0.05
 ```
 
-### 4. Offline Vector Pre-Compiler (`edgeroute build-embeddings`)
+### 4. Embedding Pre-Compiler (`edgeroute build-embeddings`)
 
-Pre-compile route example vectors offline to eliminate edge cold-start overhead:
+Pre-compile route example vectors ahead of time to eliminate cold-start vectorization overhead on serverless runtimes:
 
 ```bash
 npx edgeroute build-embeddings --output router.embeddings.json
@@ -390,79 +361,49 @@ npx edgeroute build-embeddings --output router.embeddings.json
 
 ---
 
-## 📡 Diagnostic Response Headers
+## Diagnostic Response Headers
 
-EdgeRoute enriches every upstream response with transparent routing and caching metadata:
+Every upstream response is enriched with transparent metadata headers:
 
 | Header Key | Example | Description |
 | :--- | :--- | :--- |
 | `X-EdgeRoute-Cache` | `HIT` \| `MISS` \| `BYPASS` \| `SKIPPED` | Semantic cache status |
 | `X-EdgeRoute-Cache-Latency` | `0.08ms` | Semantic cache lookup time |
-| `X-EdgeRoute-Matched-Route` | `instant-greeting-and-qa` | Name of matched route or `default` |
-| `X-EdgeRoute-Target-Model` | `gemini-3.7-flash` | Actual model dispatched to or served from cache |
-| `X-EdgeRoute-Provider` | `gemini` \| `anthropic` \| `groq` \| `openai` | Upstream provider utilized |
-| `X-EdgeRoute-Path` | `fast-path` \| `semantic-path` \| `fallback` | Decision mechanism |
+| `X-EdgeRoute-Matched-Route` | `instant-greeting-and-qa` | Matched route identifier or `default` |
+| `X-EdgeRoute-Target-Model` | `gemini-3.7-flash` | Dispatched model name |
+| `X-EdgeRoute-Provider` | `gemini` \| `anthropic` \| `groq` \| `openai` | Upstream provider |
+| `X-EdgeRoute-Path` | `fast-path` \| `semantic-path` \| `fallback` | Decision tier |
 | `X-EdgeRoute-Score` | `0.8421` | Highest cosine similarity score |
-| `X-EdgeRoute-Cost-Saved-USD` | `0.042300` | Estimated USD saved vs. `defaultModel` |
-| `X-EdgeRoute-Cost-Saved-Percent` | `100%` | Percentage of cost saved |
-| `X-EdgeRoute-Latency-Routing`| `0.12ms` | Microseconds elapsed for classification |
-| `X-RateLimit-Limit` | `100` | Allowed requests in rate limit window |
-| `X-RateLimit-Remaining` | `99` | Remaining requests in current window |
-| `X-RateLimit-Reset` | `1724912400` | Epoch timestamp when the rate limit quota resets |
+| `X-EdgeRoute-Cost-Saved-USD` | `0.042300` | Estimated savings vs `defaultModel` |
+| `X-EdgeRoute-Cost-Saved-Percent` | `100%` | Relative savings percentage |
+| `X-EdgeRoute-Latency-Routing` | `0.12ms` | Classification compute time |
+| `X-RateLimit-Limit` | `100` | Allowed requests per window |
+| `X-RateLimit-Remaining` | `99` | Remaining quota in window |
+| `X-RateLimit-Reset` | `1724912400` | Quota reset timestamp (Unix epoch) |
 
 ---
 
-## 🔒 Security, Authentication & BYOK (Bring Your Own Key)
+## Design Decisions & Trade-offs
 
-### 1. Proxy Authentication & Protection
-- **Bearer & API Key Authentication**: Protect `/v1/*` endpoints using `auth.apiKeys` or custom `auth.validator`. Constant-time comparison prevents timing side-channel attacks.
-- **Credential Isolation**: Client proxy tokens are securely isolated and never forwarded as LLM API keys upstream.
-- **Sliding-Window Rate Limiting**: Mitigate DoS attacks and runaway costs via `rateLimit.maxRequests`.
-- **CORS & Payload Guards**: Configure allowed origins and reject oversized request bodies via `security.maxBodySize`.
-
-### 2. Multi-Provider BYOK Header Mapping
-When using client-managed API keys across multiple routed providers:
-
-| Provider | Supported BYOK Header |
-| :--- | :--- |
-| **OpenAI** | `x-openai-api-key` \| `x-provider-api-key` \| `Authorization: Bearer <key>` |
-| **Anthropic** | `x-anthropic-api-key` \| `x-api-key` \| `x-provider-api-key` |
-| **Google Gemini** | `x-goog-api-key` \| `x-gemini-api-key` \| `x-provider-api-key` |
-| **Groq** | `x-groq-api-key` \| `x-provider-api-key` |
+- **Memory vs. Latency in Edge Environments**: Running ONNX embeddings in memory on standard Node.js/Bun instances yields sub-millisecond local vectorization. On resource-constrained edge workers (e.g. 128MB memory limit), EdgeRoute delegates embedding generation to platform-native services (Cloudflare Workers AI) or utilizes pre-compiled vectors (`router.embeddings.json`).
+- **Lexical Hash Fallback**: When no neural embedding model is loaded, EdgeRoute uses n-gram frequency hashing. While extremely fast and zero-dependency, lexical hashing does not capture deep semantic meaning. For production semantic routing, configure a neural provider or Cloudflare Workers AI.
+- **Failover Scope**: Automatic retry handles transient downstream network issues (`429`, `500`, `502`, `503`, `504`). Non-retryable client errors (`400`, `401`, `403`, `422`) are passed through immediately to preserve upstream error semantics.
 
 ---
 
-## 🗄️ Distributed Caching Across Multi-Instance Environments
+## Documentation & Architecture
 
-For serverless edge deployments (Cloudflare Workers, Vercel Edge, AWS Lambda, Kubernetes pods), utilize distributed cache stores:
-
-```typescript
-import { UpstashRedisCacheStore } from '@edgeroute/core';
-
-export default defineConfig({
-  defaultModel: 'gpt-5.6-sol',
-  cache: {
-    enabled: true,
-    threshold: 0.95,
-    store: new UpstashRedisCacheStore({
-      url: process.env.UPSTASH_REDIS_REST_URL!,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-      prefix: 'edgeroute:cache:',
-    }),
-  },
-  routes: [/* ... */],
-});
-```
+For in-depth technical specifications and architectural design details, see [docs/SPEC.md](file:///docs/SPEC.md).
 
 ---
 
-## 🧪 Testing & Verification
+## Development & Testing
 
 ```bash
-# Run Vitest test suite
+# Run unit & integration test suites
 npm test
 
-# Run TypeScript type check
+# Type check packages
 npm run typecheck
 
 # Build ESM & CJS distribution bundles
@@ -471,6 +412,6 @@ npm run build
 
 ---
 
-## 📄 License
+## License
 
-MIT © [EdgeRoute Authors](https://github.com/edgeroute/edgeroute)
+MIT © [EdgeRoute Authors](https://github.com/karakara-rin/edgeroute)

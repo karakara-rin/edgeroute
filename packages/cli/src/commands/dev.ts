@@ -82,11 +82,12 @@ export async function devCommand(options: DevOptions): Promise<http.Server> {
     server.listen(port, host, () => {
       console.log(pc.bold(pc.cyan('\n🚀 EdgeRoute Dev Server running!')));
       console.log(pc.dim('──────────────────────────────────────────────────'));
-      console.log(`  ${pc.bold('• Local:')}   ${pc.cyan(`http://localhost:${port}`)}`);
-      console.log(`  ${pc.bold('• Health:')}  ${pc.cyan(`http://localhost:${port}/health`)}`);
-      console.log(`  ${pc.bold('• Proxy:')}   ${pc.cyan(`http://localhost:${port}/v1/chat/completions`)}`);
-      console.log(`  ${pc.bold('• Default:')} ${pc.green(config.defaultModel)}`);
-      console.log(`  ${pc.bold('• Routes:')}  ${config.routes.length} configured`);
+      console.log(`  ${pc.bold('• Local:')}     ${pc.cyan(`http://localhost:${port}`)}`);
+      console.log(`  ${pc.bold('• Dashboard:')} ${pc.magenta(pc.bold(`http://localhost:${port}/dashboard`))}`);
+      console.log(`  ${pc.bold('• Health:')}    ${pc.cyan(`http://localhost:${port}/health`)}`);
+      console.log(`  ${pc.bold('• Proxy:')}     ${pc.cyan(`http://localhost:${port}/v1/chat/completions`)}`);
+      console.log(`  ${pc.bold('• Default:')}   ${pc.green(config.defaultModel)}`);
+      console.log(`  ${pc.bold('• Routes:')}    ${config.routes.length} configured`);
       console.log(pc.dim('──────────────────────────────────────────────────\n'));
       resolve(server);
     });

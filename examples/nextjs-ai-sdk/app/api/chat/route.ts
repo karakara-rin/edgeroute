@@ -12,11 +12,11 @@ export async function POST(req: Request) {
   return createDataStreamResponse({
     execute: async (dataStream) => {
       const router = edgeroute({
-        defaultModel: 'gpt-4o-mini',
+        defaultModel: 'gpt-5.6-luna',
         routes: [
           {
             name: 'complex-code',
-            targetModel: 'claude-3-5-sonnet-20241022',
+            targetModel: 'claude-sonnet-5',
             rules: {
               minCharacters: 300,
               patterns: ['refactor', 'architecture', 'kubernetes', 'compiler', 'typescript'],
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
           },
           {
             name: 'quick-qa',
-            targetModel: 'gpt-4o-mini',
+            targetModel: 'gpt-5.6-luna',
             rules: {
               maxCharacters: 80,
             },
@@ -44,8 +44,8 @@ export async function POST(req: Request) {
           ttl: 3600,
         },
         models: {
-          'claude-3-5-sonnet-20241022': anthropic('claude-3-5-sonnet-20241022'),
-          'gpt-4o-mini': openai('gpt-4o-mini'),
+          'claude-sonnet-5': anthropic('claude-sonnet-5'),
+          'gpt-5.6-luna': openai('gpt-5.6-luna'),
         },
         onRouteMatched: (result, savings) => {
           // Send real-time routing telemetry to client UI

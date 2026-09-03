@@ -34,11 +34,11 @@ describe('EdgeRoute init Preset Selection Suite', () => {
       expect(fs.existsSync(generatedPath)).toBe(true);
 
       const configContent = fs.readFileSync(generatedPath, 'utf-8');
-      expect(configContent).toContain('defaultModel: \'gpt-4o\'');
+      expect(configContent).toContain("defaultModel: 'gpt-5.6-sol'");
       expect(configContent).toContain('threshold: 0.92');
       expect(configContent).toContain('simple-tasks');
-      expect(configContent).toContain('gpt-4o-mini');
-      expect(configContent).toContain('claude-3-5-haiku-20241022');
+      expect(configContent).toContain('gpt-5.6-luna');
+      expect(configContent).toContain('claude-haiku-4-5');
 
       const envPath = path.join(tmpDir, '.env.example');
       expect(fs.existsSync(envPath)).toBe(true);
@@ -51,12 +51,12 @@ describe('EdgeRoute init Preset Selection Suite', () => {
       await initCommand({ cwd: tmpDir, preset: 'cost-saver' });
       const loaded = await loadConfig(path.join(tmpDir, 'router.config.ts'), tmpDir);
 
-      expect(loaded.defaultModel).toBe('gpt-4o');
+      expect(loaded.defaultModel).toBe('gpt-5.6-sol');
       expect(loaded.cache?.enabled).toBe(true);
       expect(loaded.cache?.threshold).toBe(0.92);
       expect(loaded.routes).toHaveLength(2);
       expect(loaded.routes[0]?.name).toBe('simple-tasks');
-      expect(loaded.routes[0]?.targetModel).toBe('gpt-4o-mini');
+      expect(loaded.routes[0]?.targetModel).toBe('gpt-5.6-luna');
     });
   });
 
@@ -69,8 +69,8 @@ describe('EdgeRoute init Preset Selection Suite', () => {
       expect(fs.existsSync(targetFile)).toBe(true);
 
       const configContent = fs.readFileSync(targetFile, 'utf-8');
-      expect(configContent).toContain('defaultModel: \'claude-3-5-sonnet-20241022\'');
-      expect(configContent).toContain('groq/llama-3.3-70b-versatile');
+      expect(configContent).toContain("defaultModel: 'claude-sonnet-5'");
+      expect(configContent).toContain('llama-3.3-70b-versatile');
       expect(configContent).toContain('threshold: 0.95');
 
       const envPath = path.join(tmpDir, '.env.example');
@@ -80,8 +80,8 @@ describe('EdgeRoute init Preset Selection Suite', () => {
       expect(envContent).toContain('GROQ_API_KEY');
 
       const loaded = await loadConfig(targetFile, tmpDir);
-      expect(loaded.defaultModel).toBe('claude-3-5-sonnet-20241022');
-      expect(loaded.routes.some((r) => r.targetModel === 'groq/llama-3.3-70b-versatile')).toBe(true);
+      expect(loaded.defaultModel).toBe('claude-sonnet-5');
+      expect(loaded.routes.some((r) => r.targetModel === 'llama-3.3-70b-versatile')).toBe(true);
       expect(loaded.cache?.threshold).toBe(0.95);
     });
   });
@@ -104,7 +104,7 @@ describe('EdgeRoute init Preset Selection Suite', () => {
       expect(envContent).toContain('OPENAI_API_KEY');
 
       const loaded = await loadConfig(targetFile, tmpDir);
-      expect(loaded.defaultModel).toBe('gpt-4o');
+      expect(loaded.defaultModel).toBe('gpt-5.6-sol');
       expect(loaded.cache?.enabled).toBe(true);
       expect(loaded.routes).toHaveLength(0);
     });
@@ -153,7 +153,7 @@ describe('EdgeRoute init Preset Selection Suite', () => {
         force: true,
       });
 
-      expect(fs.readFileSync(configPath, 'utf-8')).toContain('claude-3-5-sonnet');
+      expect(fs.readFileSync(configPath, 'utf-8')).toContain('claude-sonnet-5');
       expect(fs.readFileSync(envPath, 'utf-8')).toContain('GROQ_API_KEY');
     });
   });

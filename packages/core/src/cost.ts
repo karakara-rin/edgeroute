@@ -54,6 +54,15 @@ export const DEFAULT_MODEL_PRICING: Record<string, ModelPricing> = {
   'mixtral-8x7b-32768': { inputPerMillion: 0.24, outputPerMillion: 0.24 },
   'deepseek-r1-distill-llama-70b': { inputPerMillion: 0.59, outputPerMillion: 0.79 },
 
+  // DeepSeek Official API
+  'deepseek-chat': { inputPerMillion: 0.14, outputPerMillion: 0.28 },
+  'deepseek-reasoner': { inputPerMillion: 0.55, outputPerMillion: 2.19 },
+  'deepseek-v3': { inputPerMillion: 0.14, outputPerMillion: 0.28 },
+  'deepseek-r1': { inputPerMillion: 0.55, outputPerMillion: 2.19 },
+
+  // Ollama & Local Inference (100% Free / Self-hosted)
+  'ollama': { inputPerMillion: 0.0, outputPerMillion: 0.0 },
+
   // Cloudflare Workers AI
   '@cf/meta/llama-3.3-70b-instruct': { inputPerMillion: 0.35, outputPerMillion: 0.75 },
   '@cf/meta/llama-3.1-8b-instruct': { inputPerMillion: 0.05, outputPerMillion: 0.10 },
@@ -70,6 +79,10 @@ export function calculateTokenCost(
   outputTokens: number,
   customPricing?: Record<string, ModelPricing>,
 ): number {
+  if (model.startsWith('ollama') || model.startsWith('local/')) {
+    return 0;
+  }
+
   const pricing =
     customPricing?.[model] ||
     DEFAULT_MODEL_PRICING[model] || {

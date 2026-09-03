@@ -12,6 +12,7 @@ import {
 } from './middleware/index.js';
 import { ServerLogger, type ServerLoggerOptions } from './logger.js';
 import { handleChatCompletions } from './handlers/chat-completions.js';
+import { renderDashboardHtml, globalDashboardTelemetry } from './dashboard/index.js';
 
 // Re-export types and utilities for 100% backward compatibility
 export * from './types.js';
@@ -94,6 +95,38 @@ export function createRouterRoutes(
       })),
     ];
     return c.json({ object: 'list', data: models });
+  });
+
+  // Web Control Plane Dashboard
+  app.get('/dashboard', (c) => {
+    return c.html(renderDashboardHtml(config));
+  });
+
+  // Telemetry Metrics API
+  app.get('/api/dashboard/stats', (c) => {
+    return c.json(globalDashboardTelemetry.getStats());
+  });
+
+  // Telemetry Reset API
+  app.post('/api/dashboard/reset', (c) => {
+    globalDashboardTelemetry.clear();
+    return c.json({ status: 'ok', message: 'Telemetry metrics reset' });
+  });
+
+  // Interactive Prompt Route Tester API
+  app.post('/api/dashboard/test-prompt', async (c) => {
+    try {
+      const body = await c.req.json<{ prompt?: string }>();
+      const promptText = (body?.prompt || '').trim();
+      if (!promptText) {
+        return c.json({ error: 'Prompt is required' }, 400);
+      }
+
+      const evaluation = await engine.evaluatePrompt(promptText);
+      return c.json(evaluation);
+    } catch (err: any) {
+      return c.json({ error: err.message }, 500);
+    }
   });
 
   // Main OpenAI-compatible chat completions proxy

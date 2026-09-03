@@ -91,3 +91,26 @@ export interface ChatCompletionChunk {
   system_fingerprint?: string;
 }
 
+export interface RouteLogEvent {
+  id?: string;
+  timestamp?: number;
+  method: string;
+  path: string;
+  status: number;
+  durationMs: number;
+  fromCache?: boolean;
+  cacheLatencyMs?: number;
+  matchedRoute?: string;
+  targetModel?: string;
+  defaultModel?: string;
+  provider?: string;
+  savedCostUSD?: number;
+  retriedWithFallback?: boolean;
+  primaryModelError?: string | number;
+  tokens?: {
+    prompt?: number;
+    completion?: number;
+    total?: number;
+  };
+}
+

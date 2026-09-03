@@ -28,3 +28,6 @@ Thumbs.db
 
 # TypeScript build info
 *.tsbuildinfo
+
+# Internal / Learning guides
+LEARNING_GUIDE_JA.md
