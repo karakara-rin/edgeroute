@@ -7,26 +7,32 @@ export interface OpenAICompatibleAdapterOptions {
   defaultBaseUrl: string;
   envKey: string;
   headerKey: string;
+  additionalHeaderKeys?: string[];
   forwardOpenAIHeaders?: boolean;
+  attachCustomHeaders?: (apiKey: string) => Record<string, string>;
 }
 
 /**
  * Base adapter for providers using the standard OpenAI `/chat/completions` REST protocol
- * (e.g. OpenAI, Groq, DeepSeek, Together AI, vLLM, Ollama, custom proxies).
+ * (e.g. OpenAI, Groq, DeepSeek, Together AI, vLLM, Ollama, Gemini, custom proxies).
  */
 export class OpenAICompatibleAdapter implements ProviderAdapter {
   readonly name: ProviderType;
   protected readonly defaultBaseUrl: string;
   protected readonly envKey: string;
   protected readonly headerKey: string;
+  protected readonly additionalHeaderKeys?: string[];
   protected readonly forwardOpenAIHeaders: boolean;
+  protected readonly attachCustomHeaders?: (apiKey: string) => Record<string, string>;
 
   constructor(options: OpenAICompatibleAdapterOptions) {
     this.name = options.name;
     this.defaultBaseUrl = options.defaultBaseUrl;
     this.envKey = options.envKey;
     this.headerKey = options.headerKey;
+    this.additionalHeaderKeys = options.additionalHeaderKeys;
     this.forwardOpenAIHeaders = options.forwardOpenAIHeaders ?? false;
+    this.attachCustomHeaders = options.attachCustomHeaders;
   }
 
   async execute(options: ProviderRequestOptions): Promise<Response> {
@@ -37,12 +43,17 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
       providerConfig?.baseUrl || this.defaultBaseUrl
     ).replace(/\/+$/, '');
 
+    const specificHeaders = [this.headerKey];
+    if (this.additionalHeaderKeys) {
+      specificHeaders.push(...this.additionalHeaderKeys);
+    }
+
     const apiKey = resolveProviderApiKey({
       provider: this.name,
       config,
       clientHeaders,
       envKey: this.envKey,
-      specificHeaderNames: [this.headerKey],
+      specificHeaderNames: specificHeaders,
     });
 
     const payload = {
@@ -56,6 +67,9 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
 
     if (apiKey) {
       headers['Authorization'] = `Bearer ${apiKey}`;
+      if (this.attachCustomHeaders) {
+        Object.assign(headers, this.attachCustomHeaders(apiKey));
+      }
     }
 
     if (this.forwardOpenAIHeaders) {

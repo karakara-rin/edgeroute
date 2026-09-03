@@ -217,11 +217,17 @@ export class AnthropicAdapter implements ProviderAdapter {
               ? JSON.stringify(rawContent)
               : '';
 
-        appendBlockToRole('user', {
+        const toolResultBlock: Record<string, unknown> = {
           type: 'tool_result',
           tool_use_id: msg.tool_call_id || '',
           content: stringContent,
-        });
+        };
+
+        if ((msg as any).is_error || (msg as any).status === 'error') {
+          toolResultBlock.is_error = true;
+        }
+
+        appendBlockToRole('user', toolResultBlock);
       }
     }
 
@@ -299,10 +305,15 @@ export class AnthropicAdapter implements ProviderAdapter {
       } else if (choice === 'none') {
         anthropicToolChoice = undefined;
       } else if (typeof choice === 'object' && choice !== null) {
-        if ('function' in choice && choice.function?.name) {
+        const anyChoice = choice as any;
+        const toolName =
+          anyChoice.function?.name ||
+          anyChoice.name ||
+          anyChoice.toolName;
+        if (toolName) {
           anthropicToolChoice = {
             type: 'tool',
-            name: choice.function.name,
+            name: toolName,
           };
         }
       }

@@ -22,7 +22,9 @@ Most existing LLM semantic routing libraries are Python-heavy, have significant 
   - **Tier 1 (Fast-path)**: Regex, keyword heuristics, and character bounds evaluated with near-zero overhead (`< 0.05ms`).
   - **Tier 2 (Semantic-path)**: In-memory vector cosine similarity against pre-computed route embeddings (`< 0.5ms`).
 - **Semantic Caching Layer**: In-memory, Cloudflare KV, and Redis-backed cache serving semantically equivalent queries above a configurable similarity threshold, with full OpenAI-compatible SSE streaming support.
-- **Multi-Provider & BYOK**: Route seamlessly across **Anthropic** (`claude-*`), **Google Gemini** (`gemini-*`), **Groq** (`llama-*`, `mixtral-*`, `deepseek-*`), and **OpenAI** (`gpt-*`, `o1`, `o3-mini`).
+- **Embedded Zero-DB Web Dashboard**: Instant control plane at `/dashboard` featuring real-time cache hit rates, cumulative cost savings, edge latency metrics, recent request logs, and an interactive prompt route simulator.
+- **Multi-Provider & Local Inference**: Route seamlessly across **OpenAI** (`gpt-*`, `o1`, `o3-mini`), **Anthropic** (`claude-*`), **Google Gemini** (`gemini-*`), **Groq** (`llama-*`, `mixtral-*`), **DeepSeek** (`deepseek-chat`, `deepseek-reasoner`), **Ollama** (100% free local inference `ollama/*`), and **Azure OpenAI**.
+- **Cross-Provider Tool Calling (Function Calling)**: Full transparent translation of `tools`, `tool_choice`, and multi-turn tool results with SSE streaming between OpenAI, Anthropic, and open-source models.
 - **Zero-Dependency Runtime Auto-Detection**: Dynamically resolves embedding backends — **Cloudflare Workers AI** (`bge-small-en-v1.5`) on the edge, **Transformers.js** (`all-MiniLM-L6-v2` ONNX) on Node.js/Bun, with zero-dependency lexical fallback.
 - **Drop-in OpenAI Compatibility**: Integrates with OpenAI SDK, Vercel AI SDK, LangChain, and LlamaIndex simply by pointing `baseURL` to the proxy.
 - **Cross-Provider Failover**: Automatic retry against `defaultModel` across different providers on downstream `429` (Rate Limit) or `5xx` server errors.
@@ -313,11 +315,12 @@ npx edgeroute dev --port 3000 --config ./router.config.ts
 ```text
 EdgeRoute Dev Server running
 ──────────────────────────────────────────────────
-  • Local:   http://localhost:3000
-  • Health:  http://localhost:3000/health
-  • Proxy:   http://localhost:3000/v1/chat/completions
-  • Default: gpt-5.6-sol
-  • Routes:  3 configured
+  • Local:     http://localhost:3000
+  • Dashboard: http://localhost:3000/dashboard
+  • Health:    http://localhost:3000/health
+  • Proxy:     http://localhost:3000/v1/chat/completions
+  • Default:   gpt-5.6-sol
+  • Routes:    3 configured
 ──────────────────────────────────────────────────
 ```
 

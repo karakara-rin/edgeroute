@@ -139,7 +139,7 @@ export async function handleChatCompletions(
   const durationMs = performance.now() - startTime;
   const responseStatus = result.status ?? (result.ok === false ? 500 : 200);
 
-  logger.logRequest({
+  const logEvent = {
     method: 'POST',
     path: '/v1/chat/completions',
     status: responseStatus,
@@ -149,9 +149,17 @@ export async function handleChatCompletions(
     matchedRoute: result.classification?.matchedRoute,
     targetModel: result.actualModel,
     defaultModel: config.defaultModel,
+    provider: result.actualProvider,
     savedCostUSD,
     retriedWithFallback: result.retriedWithFallback,
-  });
+    tokens: {
+      prompt: result.usage?.prompt_tokens ?? promptTokens,
+      completion: result.usage?.completion_tokens,
+      total: result.usage?.total_tokens,
+    },
+  };
+
+  logger.logRequest(logEvent);
 
   // 1. If Cache Hit
   if (result.fromCache && result.cachedResponse) {

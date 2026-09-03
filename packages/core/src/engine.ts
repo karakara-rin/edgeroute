@@ -8,12 +8,14 @@ import {
   type RouteEngineExecutionResult,
   type RouteEngineRequest,
   type TokenUsage,
+  type PromptEvaluationResult,
   isRetryableStatus,
 } from './types.js';
 import { SemanticClassifier } from './classifier.js';
 import { SemanticCacheManager } from './cache/manager.js';
 import type { EmbeddingProvider } from './embeddings/index.js';
 import { compareRoutingCost } from './cost.js';
+import { estimateTokens } from './tokens.js';
 import {
   createEmbeddingProvider,
   createSemanticCacheManager,
@@ -389,5 +391,34 @@ export class EdgeRouteEngine {
         usage,
       });
     }
+  }
+
+  /**
+   * Dry-run evaluates an input prompt through the classifier and calculates estimated cost savings.
+   * Useful for dashboard simulators, CLI testing, and telemetry previews without calling upstream APIs.
+   */
+  async evaluatePrompt(prompt: string): Promise<PromptEvaluationResult> {
+    await this.initialize();
+    const classification = await this.classifier.classify(prompt);
+    const estTokens = estimateTokens(prompt);
+    const comparison = compareRoutingCost(
+      classification.targetModel,
+      this.config.defaultModel,
+      estTokens,
+      50,
+      this.config.customPricing,
+    );
+
+    return {
+      matchedRoute: classification.matchedRoute,
+      targetModel: classification.targetModel,
+      defaultModel: this.config.defaultModel,
+      tier: classification.path || 'fallback',
+      score: classification.score,
+      estimatedSavingsPercent: comparison.savingsPercentage,
+      estimatedSavingsUSD: comparison.savingsUSD,
+      promptTokens: estTokens,
+      latencyMs: classification.latencyMs ?? 0,
+    };
   }
 }

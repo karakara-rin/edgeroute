@@ -1,4 +1,8 @@
 import pc from 'picocolors';
+import type { RouteLogEvent } from './types.js';
+import { globalDashboardTelemetry } from './dashboard/telemetry.js';
+
+export type { RouteLogEvent };
 
 export interface ServerLoggerOptions {
   /**
@@ -11,29 +15,22 @@ export interface ServerLoggerOptions {
    * Custom output writer (defaults to console.log).
    */
   writer?: (message: string) => void;
-}
-
-export interface RouteLogEvent {
-  method: string;
-  path: string;
-  status: number;
-  durationMs: number;
-  fromCache?: boolean;
-  cacheLatencyMs?: number;
-  matchedRoute?: string;
-  targetModel?: string;
-  defaultModel?: string;
-  savedCostUSD?: number;
-  retriedWithFallback?: boolean;
-  primaryModelError?: string | number;
+  /**
+   * Target telemetry store to record request metrics into.
+   * Set to `false` to disable automatic telemetry recording.
+   * Defaults to globalDashboardTelemetry.
+   */
+  telemetryStore?: { recordRequest: (event: RouteLogEvent) => void } | false;
 }
 
 export class ServerLogger {
   private enabled: boolean;
   private writer: (message: string) => void;
+  private telemetryStore?: { recordRequest: (event: RouteLogEvent) => void } | false;
 
   constructor(options: ServerLoggerOptions = {}) {
     this.writer = options.writer ?? console.log;
+    this.telemetryStore = options.telemetryStore;
 
     if (options.enabled !== undefined) {
       this.enabled = options.enabled;
@@ -114,6 +111,11 @@ export class ServerLogger {
    * Logs a complete request lifecycle event with badges and colorized telemetry.
    */
   public logRequest(event: RouteLogEvent): void {
+    if (this.telemetryStore !== false) {
+      const store = this.telemetryStore || globalDashboardTelemetry;
+      store.recordRequest(event);
+    }
+
     if (!this.enabled) return;
 
     const timeStr = pc.dim(new Date().toLocaleTimeString());
