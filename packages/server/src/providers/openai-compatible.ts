@@ -1,6 +1,10 @@
 import type { ProviderType } from '@edgeroute/core';
 import type { ProviderAdapter, ProviderRequestOptions } from './types.js';
 import { resolveProviderApiKey } from './utils.js';
+import {
+  type SanitizerOptions,
+  sanitizeOpenAICompatiblePayload,
+} from './sanitizer.js';
 
 export interface OpenAICompatibleAdapterOptions {
   name: ProviderType;
@@ -10,6 +14,8 @@ export interface OpenAICompatibleAdapterOptions {
   additionalHeaderKeys?: string[];
   forwardOpenAIHeaders?: boolean;
   attachCustomHeaders?: (apiKey: string) => Record<string, string>;
+  sanitizerOptions?: SanitizerOptions | boolean;
+  stripModelPrefix?: string | string[];
 }
 
 /**
@@ -24,6 +30,8 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
   protected readonly additionalHeaderKeys?: string[];
   protected readonly forwardOpenAIHeaders: boolean;
   protected readonly attachCustomHeaders?: (apiKey: string) => Record<string, string>;
+  protected readonly sanitizerOptions?: SanitizerOptions | boolean;
+  protected readonly stripModelPrefix?: string | string[];
 
   constructor(options: OpenAICompatibleAdapterOptions) {
     this.name = options.name;
@@ -33,6 +41,8 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
     this.additionalHeaderKeys = options.additionalHeaderKeys;
     this.forwardOpenAIHeaders = options.forwardOpenAIHeaders ?? false;
     this.attachCustomHeaders = options.attachCustomHeaders;
+    this.sanitizerOptions = options.sanitizerOptions;
+    this.stripModelPrefix = options.stripModelPrefix;
   }
 
   async execute(options: ProviderRequestOptions): Promise<Response> {
@@ -56,10 +66,30 @@ export class OpenAICompatibleAdapter implements ProviderAdapter {
       specificHeaderNames: specificHeaders,
     });
 
-    const payload = {
+    let cleanModel = model;
+    if (this.stripModelPrefix) {
+      const prefixes = Array.isArray(this.stripModelPrefix)
+        ? this.stripModelPrefix
+        : [this.stripModelPrefix];
+      for (const prefix of prefixes) {
+        if (cleanModel.startsWith(prefix)) {
+          cleanModel = cleanModel.slice(prefix.length);
+          break;
+        }
+      }
+    }
+
+    let payload: Record<string, unknown> = {
       ...body,
-      model,
+      model: cleanModel,
     };
+
+    if (this.sanitizerOptions) {
+      payload = sanitizeOpenAICompatiblePayload(
+        payload,
+        typeof this.sanitizerOptions === 'object' ? this.sanitizerOptions : {},
+      );
+    }
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
