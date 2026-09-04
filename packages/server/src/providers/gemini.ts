@@ -11,6 +11,10 @@ export class GeminiAdapter extends OpenAICompatibleAdapter {
       attachCustomHeaders: (apiKey) => ({
         'x-goog-api-key': apiKey,
       }),
+      stripModelPrefix: ['google/'],
+      sanitizerOptions: {
+        stripParallelToolCalls: true,
+      },
     });
   }
 }

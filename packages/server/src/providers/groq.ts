@@ -7,6 +7,8 @@ export class GroqAdapter extends OpenAICompatibleAdapter {
       defaultBaseUrl: 'https://api.groq.com/openai/v1',
       envKey: 'GROQ_API_KEY',
       headerKey: 'x-groq-api-key',
+      stripModelPrefix: 'groq/',
+      sanitizerOptions: true,
     });
   }
 }

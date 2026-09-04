@@ -17,6 +17,7 @@ export * from './groq.js';
 export * from './ollama.js';
 export * from './deepseek.js';
 export * from './azure.js';
+export * from './sanitizer.js';
 
 const adapters: Record<ProviderType, ProviderAdapter> = {
   openai: new OpenAIAdapter(),
